@@ -45,4 +45,6 @@ type FilePicker interface {
 	OpenSelection()
 	SetFilter(filter storage.FileFilter)
 	IsMultiSelect() bool
+	ShowMenu(menu *fyne.Menu, pos fyne.Position, obj fyne.CanvasObject)
+	DismissMenu()
 }

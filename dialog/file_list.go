@@ -1,7 +1,6 @@
 package dialog
 
 import (
-	"fmt"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -381,7 +380,6 @@ func (i *fileItem) setSelected(selected bool) {
 }
 
 func (i *fileItem) Tapped(e *fyne.PointEvent) {
-	fmt.Printf("Tapped called on item %d\n", i.id)
 	if fyne.CurrentDevice().IsMobile() {
 		i.picker.Select(i.id)
 		return
@@ -404,14 +402,14 @@ func (i *fileItem) Tapped(e *fyne.PointEvent) {
 var _ desktop.Mouseable = (*fileItem)(nil)
 
 func (i *fileItem) MouseDown(e *desktop.MouseEvent) {
-	fmt.Printf("MouseDown called on item %d, button: %v\n", i.id, e.Button)
+	i.picker.DismissMenu()
 }
 func (i *fileItem) MouseUp(e *desktop.MouseEvent) {
 	if e.Button == desktop.MouseButtonSecondary {
 		if !i.picker.IsMultiSelect() {
 			return
 		}
-		i.showContextMenu(e.AbsolutePosition)
+		i.showContextMenu(e.Position) // Relative position
 		return
 	}
 
@@ -436,18 +434,18 @@ func (i *fileItem) showContextMenu(pos fyne.Position) {
 
 	menuItem := fyne.NewMenuItem(label, func() {
 		i.picker.ToggleSelection(i.id)
+		i.picker.DismissMenu()
 	})
 
 	menu := fyne.NewMenu("", menuItem)
-	widget.ShowPopUpMenuAtPosition(menu, fyne.CurrentApp().Driver().CanvasForObject(i), pos)
+	i.picker.ShowMenu(menu, pos, i)
 }
 
 func (i *fileItem) SecondaryTapped(e *fyne.PointEvent) {
-	fmt.Printf("SecondaryTapped called on item %d, IsMultiSelect: %v\n", i.id, i.picker.IsMultiSelect())
 	if !i.picker.IsMultiSelect() {
 		return
 	}
-	i.showContextMenu(e.AbsolutePosition)
+	i.showContextMenu(e.Position)
 }
 
 type fileItemRenderer struct {

@@ -66,6 +66,7 @@ type fileDialog struct {
 	searchEntry *widget.Entry
 
 	originalOnTypedRune func(rune)
+	activeMenu          *widget.PopUp
 }
 
 func (f *fileDialog) Show() {
@@ -123,6 +124,7 @@ func (f *fileDialog) Position() fyne.Position {
 // FilePicker Interface Implementation
 
 func (f *fileDialog) SetLocation(dir fyne.ListableURI) {
+	f.DismissMenu()
 	if f.searchEntry != nil {
 		f.searchEntry.SetText("")
 	}
@@ -133,6 +135,7 @@ func (f *fileDialog) SetLocation(dir fyne.ListableURI) {
 }
 
 func (f *fileDialog) SetView(view ViewLayout) {
+	f.DismissMenu()
 	f.view = view
 	fyne.CurrentApp().Preferences().SetInt(viewLayoutKey, int(view))
 	f.fileList.setView(view)
@@ -144,6 +147,31 @@ func (f *fileDialog) GetView() ViewLayout {
 
 func (f *fileDialog) IsMultiSelect() bool {
 	return f.allowMultiple
+}
+
+func (f *fileDialog) ShowMenu(menu *fyne.Menu, pos fyne.Position, obj fyne.CanvasObject) {
+	f.DismissMenu()
+
+	canvas := f.parent.Canvas()
+	if f.win != nil {
+		canvas = f.win.Canvas
+	}
+
+	m := widget.NewMenu(menu)
+	m.OnDismiss = f.DismissMenu
+
+	// Manually calculate absolute position since PopUp doesn't have ShowAtRelativePosition
+	absPos := fyne.CurrentApp().Driver().AbsolutePositionForObject(obj).Add(pos)
+
+	f.activeMenu = widget.NewPopUp(m, canvas)
+	f.activeMenu.ShowAtPosition(absPos)
+}
+
+func (f *fileDialog) DismissMenu() {
+	if f.activeMenu != nil {
+		f.activeMenu.Hide()
+		f.activeMenu = nil
+	}
 }
 
 func (f *fileDialog) Select(id int) {
@@ -317,6 +345,7 @@ func (f *fileDialog) makeUI() fyne.CanvasObject {
 	f.searchEntry = widget.NewEntry()
 	f.searchEntry.SetPlaceHolder(lang.L("Search..."))
 	f.searchEntry.OnChanged = func(s string) {
+		f.DismissMenu()
 		f.fileList.setFilter(s)
 	}
 
