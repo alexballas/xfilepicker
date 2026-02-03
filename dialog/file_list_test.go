@@ -1,6 +1,8 @@
 package dialog
 
 import (
+	"fmt"
+	"path/filepath"
 	"testing"
 
 	"fyne.io/fyne/v2"
@@ -81,5 +83,65 @@ func TestFileList_Sort_Filter(t *testing.T) {
 	}
 	if fl.filtered[0].Name() != "banana.png" {
 		t.Errorf("Expected banana.png, got %s", fl.filtered[0].Name())
+	}
+}
+
+type recordingPicker struct {
+	selectedIDs []int
+}
+
+func (r *recordingPicker) SetLocation(dir fyne.ListableURI)                                   {}
+func (r *recordingPicker) Refresh()                                                           {}
+func (r *recordingPicker) SetView(view ViewLayout)                                            {}
+func (r *recordingPicker) GetView() ViewLayout                                                { return ListView }
+func (r *recordingPicker) Select(id int)                                                      {}
+func (r *recordingPicker) SelectMultiple(ids []int)                                           { r.selectedIDs = append([]int(nil), ids...) }
+func (r *recordingPicker) ToggleSelection(id int)                                             {}
+func (r *recordingPicker) ExtendSelection(id int)                                             {}
+func (r *recordingPicker) IsSelected(uri fyne.URI) bool                                       { return false }
+func (r *recordingPicker) OpenSelection()                                                     {}
+func (r *recordingPicker) SetFilter(filter storage.FileFilter)                                {}
+func (r *recordingPicker) IsMultiSelect() bool                                                { return true }
+func (r *recordingPicker) ShowMenu(menu *fyne.Menu, pos fyne.Position, obj fyne.CanvasObject) {}
+func (r *recordingPicker) DismissMenu()                                                       {}
+
+func TestFileList_MarqueeSelection_StartAnchorStableAcrossScroll(t *testing.T) {
+	test.NewApp()
+
+	picker := &recordingPicker{}
+	fl := newFileList(picker)
+	fl.setView(ListView)
+	fl.list.Resize(fyne.NewSize(400, 200))
+	fl.overlay.Resize(fyne.NewSize(400, 200))
+
+	var files []fyne.URI
+	for i := 0; i < 200; i++ {
+		files = append(files, storage.NewFileURI(filepath.Join("/tmp", fmt.Sprintf("file-%03d.txt", i))))
+	}
+	fl.setFiles(files)
+
+	start := fyne.NewPos(10, 20)
+	cur := fyne.NewPos(390, 180)
+
+	// First drag update at scroll offset 0.
+	fl.onSelectionDrag(start, cur)
+	if len(picker.selectedIDs) == 0 {
+		t.Fatalf("Expected initial selection, got none")
+	}
+
+	// Scroll down and update again with the same pointer position.
+	// The selection should expand downward, but still include the first row(s) from the original start anchor.
+	fl.list.ScrollToOffset(200)
+	fl.onSelectionDrag(start, cur)
+
+	found0 := false
+	for _, id := range picker.selectedIDs {
+		if id == 0 {
+			found0 = true
+			break
+		}
+	}
+	if !found0 {
+		t.Fatalf("Expected selection to still include item 0 after scrolling during drag, got %v", picker.selectedIDs)
 	}
 }

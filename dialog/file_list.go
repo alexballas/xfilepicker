@@ -39,6 +39,14 @@ type fileList struct {
 	lastDragSelection []int
 	lastDragTime      time.Time
 	dragSelecting     bool
+
+	dragStartContent fyne.Position
+	dragCurViewport  fyne.Position
+
+	autoScrollTicker *time.Ticker
+	autoScrollStop   chan struct{}
+	autoScrollDir    int
+	autoScrollStep   float32
 }
 
 type FileSortOrder int
@@ -58,7 +66,7 @@ func newFileList(p FilePicker) *fileList {
 		sortOrder: SortNameAsc,
 	}
 
-	f.overlay = newSelectionOverlay(nil, f.onSelectionChange, f.onSelectionEnd)
+	f.overlay = newSelectionOverlay(nil, f.onSelectionDrag, f.onSelectionEnd)
 
 	f.grid = widget.NewGridWrap(
 		func() int { return len(f.filtered) },
@@ -540,25 +548,47 @@ func (f *fileList) getItemSize() fyne.Size {
 	return calculateItemSize(f.view)
 }
 
-func (f *fileList) onSelectionChange(tl, br fyne.Position) {
+func (f *fileList) onSelectionDrag(start, cur fyne.Position) {
 	// Mark as actively drag-selecting so MouseUp handlers on items don't override selection.
 	// This is important because on some platforms the MouseUp event can fire before DragEnd.
+	dragStart := !f.dragSelecting
 	f.dragSelecting = true
 
 	if len(f.filtered) == 0 {
 		return
 	}
 
-	itemSize := f.getItemSize()
-	var ids []int
+	f.dragCurViewport = cur
+	if dragStart {
+		offset := f.currentScrollOffset()
+		f.dragStartContent = fyne.NewPos(start.X, start.Y+offset)
+	}
 
+	f.updateAutoScroll()
+	f.updateDragSelection()
+}
+
+func (f *fileList) updateDragSelection() {
+	if !f.dragSelecting || len(f.filtered) == 0 {
+		return
+	}
+
+	itemSize := f.getItemSize()
+	offset := f.currentScrollOffset()
+
+	// Adjust the on-screen selection rectangle so it stays anchored to the original content start position
+	// even as the list auto-scrolls.
+	startViewportY := f.dragStartContent.Y - offset
+	f.overlay.setStartPos(fyne.NewPos(f.dragStartContent.X, startViewportY))
+
+	curContent := fyne.NewPos(f.dragCurViewport.X, f.dragCurViewport.Y+offset)
+
+	tl := fyne.NewPos(min32(f.dragStartContent.X, curContent.X), min32(f.dragStartContent.Y, curContent.Y))
+	br := fyne.NewPos(max32(f.dragStartContent.X, curContent.X), max32(f.dragStartContent.Y, curContent.Y))
+
+	var ids []int
 	if f.view == GridView {
-		// widget.GridWrap adds spacing based on theme.SizeNamePadding and maintains its own scroll offset.
-		// Convert selection rect from viewport coordinates into content coordinates by adding the scroll offset.
 		pad := f.grid.Theme().Size(theme.SizeNamePadding)
-		offsetY := f.grid.GetScrollOffset()
-		tl = tl.Add(fyne.NewPos(0, offsetY))
-		br = br.Add(fyne.NewPos(0, offsetY))
 
 		cols := f.grid.ColumnCount()
 		if cols < 1 {
@@ -614,12 +644,7 @@ func (f *fileList) onSelectionChange(tl, br fyne.Position) {
 
 	} else {
 		// List View
-		// widget.List adds spacing based on theme.SizeNamePadding and maintains its own scroll offset.
-		// Convert selection rect from viewport coordinates into content coordinates by adding the scroll offset.
 		pad := f.list.Theme().Size(theme.SizeNamePadding)
-		offsetY := f.list.GetScrollOffset()
-		tl = tl.Add(fyne.NewPos(0, offsetY))
-		br = br.Add(fyne.NewPos(0, offsetY))
 
 		width := f.list.Size().Width
 		height := itemSize.Height
@@ -646,10 +671,190 @@ func (f *fileList) onSelectionChange(tl, br fyne.Position) {
 }
 
 func (f *fileList) onSelectionEnd() {
+	f.stopAutoScroll()
 	f.lastDragSelection = nil
 	f.dragSelecting = false
 	f.lastDragTime = time.Now()
 	f.overlay.setDebugRects(nil)
+}
+
+func (f *fileList) currentScrollOffset() float32 {
+	if f.view == GridView {
+		return f.grid.GetScrollOffset()
+	}
+	return f.list.GetScrollOffset()
+}
+
+func (f *fileList) maxScrollOffset() float32 {
+	if len(f.filtered) == 0 {
+		return 0
+	}
+
+	itemSize := f.getItemSize()
+	if f.view == GridView {
+		pad := f.grid.Theme().Size(theme.SizeNamePadding)
+		stepY := itemSize.Height + pad
+
+		cols := f.grid.ColumnCount()
+		if cols < 1 {
+			cols = 1
+		}
+		rows := (len(f.filtered) + cols - 1) / cols
+		total := float32(rows) * stepY
+		max := total - f.grid.Size().Height
+		if max < 0 {
+			return 0
+		}
+		return max
+	}
+
+	pad := f.list.Theme().Size(theme.SizeNamePadding)
+	stepY := itemSize.Height + pad
+	total := float32(len(f.filtered)) * stepY
+	max := total - f.list.Size().Height
+	if max < 0 {
+		return 0
+	}
+	return max
+}
+
+func (f *fileList) updateAutoScroll() {
+	if !f.dragSelecting {
+		f.stopAutoScroll()
+		return
+	}
+
+	size := f.overlay.Size()
+	if size.Height <= 0 {
+		f.stopAutoScroll()
+		return
+	}
+
+	zone := theme.Padding() * 4
+	if zone < 24 {
+		zone = 24
+	}
+	if zone > size.Height/2 {
+		zone = size.Height / 2
+	}
+
+	var dir int
+	var intensity float32
+	if f.dragCurViewport.Y < zone {
+		dir = -1
+		intensity = (zone - f.dragCurViewport.Y) / zone
+	} else if f.dragCurViewport.Y > size.Height-zone {
+		dir = 1
+		intensity = (f.dragCurViewport.Y - (size.Height - zone)) / zone
+	}
+	if intensity > 1 {
+		intensity = 1
+	}
+
+	if dir == 0 || intensity <= 0 {
+		f.stopAutoScroll()
+		return
+	}
+
+	maxStep := f.getItemSize().Height * 0.5
+	if maxStep < 12 {
+		maxStep = 12
+	}
+	if maxStep > 80 {
+		maxStep = 80
+	}
+
+	f.autoScrollDir = dir
+	f.autoScrollStep = intensity * maxStep
+	f.startAutoScroll()
+}
+
+func (f *fileList) startAutoScroll() {
+	if f.autoScrollTicker != nil {
+		return
+	}
+	f.autoScrollTicker = time.NewTicker(30 * time.Millisecond)
+	f.autoScrollStop = make(chan struct{})
+
+	stop := f.autoScrollStop
+	ticker := f.autoScrollTicker
+	go func() {
+		for {
+			select {
+			case <-ticker.C:
+				fyne.Do(func() {
+					f.autoScrollTick()
+				})
+			case <-stop:
+				return
+			}
+		}
+	}()
+}
+
+func (f *fileList) stopAutoScroll() {
+	if f.autoScrollTicker == nil {
+		return
+	}
+	f.autoScrollTicker.Stop()
+	f.autoScrollTicker = nil
+	if f.autoScrollStop != nil {
+		close(f.autoScrollStop)
+		f.autoScrollStop = nil
+	}
+	f.autoScrollDir = 0
+	f.autoScrollStep = 0
+}
+
+func (f *fileList) autoScrollTick() {
+	if !f.dragSelecting || f.autoScrollDir == 0 || f.autoScrollStep <= 0 {
+		f.stopAutoScroll()
+		return
+	}
+
+	offset := f.currentScrollOffset()
+	maxOffset := f.maxScrollOffset()
+	if maxOffset <= 0 {
+		f.stopAutoScroll()
+		return
+	}
+
+	next := offset + float32(f.autoScrollDir)*f.autoScrollStep
+	if next < 0 {
+		next = 0
+	} else if next > maxOffset {
+		next = maxOffset
+	}
+
+	if next == offset {
+		// Hit the end, no need to keep ticking.
+		f.stopAutoScroll()
+		return
+	}
+
+	if f.view == GridView {
+		f.grid.ScrollToOffset(next)
+	} else {
+		f.list.ScrollToOffset(next)
+	}
+
+	// Scrolling changes the content coordinates of the current cursor position (viewport + offset),
+	// so refresh selection while the pointer is held at the edge.
+	f.updateDragSelection()
+}
+
+func min32(a, b float32) float32 {
+	if a < b {
+		return a
+	}
+	return b
+}
+
+func max32(a, b float32) float32 {
+	if a > b {
+		return a
+	}
+	return b
 }
 
 func sameSelection(a, b []int) bool {

@@ -20,13 +20,13 @@ type selectionOverlay struct {
 	curPos   fyne.Position
 	dragging bool
 
-	onChanged func(tl, br fyne.Position)
+	onChanged func(start, cur fyne.Position)
 	onEnd     func()
 
 	debugRects []fyne.CanvasObject
 }
 
-func newSelectionOverlay(content fyne.CanvasObject, onChanged func(tl, br fyne.Position), onEnd func()) *selectionOverlay {
+func newSelectionOverlay(content fyne.CanvasObject, onChanged func(start, cur fyne.Position), onEnd func()) *selectionOverlay {
 	s := &selectionOverlay{
 		content:   content,
 		rect:      canvas.NewRectangle(color.Transparent),
@@ -65,7 +65,7 @@ func (s *selectionOverlay) Dragged(e *fyne.DragEvent) {
 	s.refreshRect()
 
 	if s.onChanged != nil {
-		s.onChanged(s.rectCoords())
+		s.onChanged(s.startPos, s.curPos)
 	}
 }
 
@@ -94,6 +94,14 @@ func (s *selectionOverlay) refreshRect() {
 	tl, br := s.rectCoords()
 	s.rect.Move(tl)
 	s.rect.Resize(fyne.NewSize(br.X-tl.X, br.Y-tl.Y))
+}
+
+func (s *selectionOverlay) setStartPos(start fyne.Position) {
+	s.startPos = start
+	if s.dragging {
+		s.refreshRect()
+		s.rect.Refresh()
+	}
 }
 
 // Ensure overlay passes Tapped events to children if needed, but Draggable usually coexists well.
