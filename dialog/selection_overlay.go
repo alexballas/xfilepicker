@@ -33,9 +33,9 @@ func newSelectionOverlay(content fyne.CanvasObject, onChanged func(tl, br fyne.P
 		onChanged: onChanged,
 		onEnd:     onEnd,
 	}
-	s.rect.StrokeColor = theme.PrimaryColor()
+	s.rect.StrokeColor = theme.Color(theme.ColorNamePrimary)
 	s.rect.StrokeWidth = 2
-	s.rect.FillColor = theme.FocusColor()
+	s.rect.FillColor = theme.Color(theme.ColorNameFocus)
 	// Make transparent
 	r, g, b, _ := s.rect.FillColor.RGBA()
 	s.rect.FillColor = color.RGBA{R: uint8(r >> 8), G: uint8(g >> 8), B: uint8(b >> 8), A: 64}

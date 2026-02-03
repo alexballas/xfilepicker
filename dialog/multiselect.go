@@ -485,7 +485,7 @@ func (f *fileDialog) makeUI() fyne.CanvasObject {
 
 	// Wrap in a custom layout that detects resize
 	return container.New(&resizeLayout{
-		internal: layout.NewMaxLayout(),
+		internal: layout.NewStackLayout(),
 		onResize: func() {
 			f.DismissMenu()
 		},

@@ -234,7 +234,7 @@ func newFileItem(p FilePicker) *fileItem {
 		customIcon: widget.NewIcon(nil),
 		thumbnail:  canvas.NewImageFromImage(nil),
 		label:      widget.NewLabel(""),
-		bg:         canvas.NewRectangle(theme.SelectionColor()),
+		bg:         canvas.NewRectangle(theme.Color(theme.ColorNameSelection)),
 	}
 	item.thumbnail.FillMode = canvas.ImageFillContain
 	item.thumbnail.Hide()

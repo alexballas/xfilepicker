@@ -22,6 +22,10 @@ func TestThumbnailManager_GenerateCacheKey(t *testing.T) {
 
 	// Same file, same time -> same key
 	key2, err := tm.generateCacheKey(filePath)
+	if err != nil {
+		t.Fatalf("Failed to generate key2: %v", err)
+	}
+
 	if key1 != key2 {
 		t.Errorf("Keys should be identical for same file: %s != %s", key1, key2)
 	}
@@ -32,6 +36,10 @@ func TestThumbnailManager_GenerateCacheKey(t *testing.T) {
 	_ = os.Chtimes(filePath, now, now)
 
 	key3, err := tm.generateCacheKey(filePath)
+	if err != nil {
+		t.Fatalf("Failed to generate key3: %v", err)
+	}
+
 	if key3 == key1 {
 		t.Error("Key should change when modification time changes")
 	}
@@ -43,6 +51,9 @@ func TestThumbnailManager_GenerateCacheKey(t *testing.T) {
 	_ = os.Chtimes(filePath, now, now) // Reset time to isolate content change
 
 	key4, err := tm.generateCacheKey(filePath)
+	if err != nil {
+		t.Fatalf("Failed to generate key4: %v", err)
+	}
 	if key4 == key3 {
 		t.Error("Key should change when first 32KB content changes")
 	}
