@@ -2,11 +2,11 @@
 
 `xfilepicker` is an enhanced file selection dialog for [Fyne](https://fyne.io), designed to provide a more powerful and responsive experience than the default toolkit's file picker.
 
-## Why xfilepicker?
+## Goals
 
-While Fyne's default picker is capable, `xfilepicker` addresses several power-user needs and performance bottlenecks:
+While Fyne's default picker is excellent for general use, `xfilepicker` is an extended version designed for applications with specialized needs, particularly around high-performance media management and persistent caching.
 
-### 1. Robust Multi-Selection
+## Key Features & Enhancements
 *   **Complete Modifier Support**: Fully supports `Ctrl+Click` (additive), `Shift+Click` (range), and `Drag-Select`.
 *   **Flexible API**: Easily toggle between single-file and multiple-file selection via a simple boolean flag.
 
