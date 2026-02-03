@@ -1,6 +1,7 @@
 package dialog
 
 import (
+	"fmt"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -209,6 +210,7 @@ type fileItem struct {
 	thumbnail  *canvas.Image
 	label      *widget.Label
 	bg         *canvas.Rectangle
+	menuButton *widget.Button
 
 	currentPath string
 	currentView ViewLayout
@@ -225,6 +227,11 @@ func newFileItem(p FilePicker) *fileItem {
 		label:      widget.NewLabel(""),
 		bg:         canvas.NewRectangle(theme.SelectionColor()),
 	}
+	item.menuButton = widget.NewButtonWithIcon("", theme.MoreVerticalIcon(), func() {
+		item.showContextMenu(fyne.CurrentApp().Driver().AbsolutePositionForObject(item.menuButton))
+	})
+	item.menuButton.Importance = widget.LowImportance
+	item.menuButton.Hide()
 	item.thumbnail.FillMode = canvas.ImageFillContain
 	item.thumbnail.Hide()
 	item.customIcon.Hide()
@@ -374,6 +381,7 @@ func (i *fileItem) setSelected(selected bool) {
 }
 
 func (i *fileItem) Tapped(e *fyne.PointEvent) {
+	fmt.Printf("Tapped called on item %d\n", i.id)
 	if fyne.CurrentDevice().IsMobile() {
 		i.picker.Select(i.id)
 		return
@@ -395,8 +403,18 @@ func (i *fileItem) Tapped(e *fyne.PointEvent) {
 
 var _ desktop.Mouseable = (*fileItem)(nil)
 
-func (i *fileItem) MouseDown(*desktop.MouseEvent) {}
+func (i *fileItem) MouseDown(e *desktop.MouseEvent) {
+	fmt.Printf("MouseDown called on item %d, button: %v\n", i.id, e.Button)
+}
 func (i *fileItem) MouseUp(e *desktop.MouseEvent) {
+	if e.Button == desktop.MouseButtonSecondary {
+		if !i.picker.IsMultiSelect() {
+			return
+		}
+		i.showContextMenu(e.AbsolutePosition)
+		return
+	}
+
 	if e.Button != desktop.MouseButtonPrimary {
 		return
 	}
@@ -410,11 +428,7 @@ func (i *fileItem) MouseUp(e *desktop.MouseEvent) {
 	}
 }
 
-func (i *fileItem) SecondaryTapped(e *fyne.PointEvent) {
-	if !i.picker.IsMultiSelect() {
-		return
-	}
-
+func (i *fileItem) showContextMenu(pos fyne.Position) {
 	label := lang.L("Select")
 	if i.picker.IsSelected(i.uri) {
 		label = lang.L("Deselect")
@@ -425,7 +439,15 @@ func (i *fileItem) SecondaryTapped(e *fyne.PointEvent) {
 	})
 
 	menu := fyne.NewMenu("", menuItem)
-	widget.ShowPopUpMenuAtPosition(menu, fyne.CurrentApp().Driver().CanvasForObject(i), e.AbsolutePosition)
+	widget.ShowPopUpMenuAtPosition(menu, fyne.CurrentApp().Driver().CanvasForObject(i), pos)
+}
+
+func (i *fileItem) SecondaryTapped(e *fyne.PointEvent) {
+	fmt.Printf("SecondaryTapped called on item %d, IsMultiSelect: %v\n", i.id, i.picker.IsMultiSelect())
+	if !i.picker.IsMultiSelect() {
+		return
+	}
+	i.showContextMenu(e.AbsolutePosition)
 }
 
 type fileItemRenderer struct {
@@ -457,6 +479,12 @@ func (r *fileItemRenderer) Layout(size fyne.Size) {
 		textHeight := lineHeight * 4.0
 		r.item.label.Resize(fyne.NewSize(size.Width, textHeight))
 		r.item.label.Move(fyne.NewPos(0, iconSize.Height+theme.Padding()*1.5))
+
+		if r.item.menuButton.Visible() {
+			btnSize := fyne.NewSize(24, 24)
+			r.item.menuButton.Resize(btnSize)
+			r.item.menuButton.Move(fyne.NewPos(size.Width-btnSize.Width-theme.Padding()/2, theme.Padding()/2))
+		}
 	} else {
 		iconSize := fyne.NewSquareSize(fileInlineIconSize)
 		r.item.icon.Resize(iconSize)
@@ -468,6 +496,12 @@ func (r *fileItemRenderer) Layout(size fyne.Size) {
 		labelSize := fyne.NewSize(size.Width-iconSize.Width-theme.Padding()*3, size.Height)
 		r.item.label.Resize(labelSize)
 		r.item.label.Move(fyne.NewPos(iconSize.Width+theme.Padding()*2, 0))
+
+		if r.item.menuButton.Visible() {
+			btnSize := fyne.NewSize(32, 32)
+			r.item.menuButton.Resize(btnSize)
+			r.item.menuButton.Move(fyne.NewPos(size.Width-btnSize.Width-theme.Padding(), (size.Height-btnSize.Height)/2))
+		}
 	}
 }
 
@@ -490,10 +524,16 @@ func (r *fileItemRenderer) Refresh() {
 	r.item.customIcon.Refresh()
 	r.item.thumbnail.Refresh()
 	r.item.label.Refresh()
+	if r.item.picker.IsMultiSelect() {
+		r.item.menuButton.Show()
+	} else {
+		r.item.menuButton.Hide()
+	}
+	r.item.menuButton.Refresh()
 }
 
 func (r *fileItemRenderer) Objects() []fyne.CanvasObject {
-	return []fyne.CanvasObject{r.item.bg, r.item.icon, r.item.customIcon, r.item.thumbnail, r.item.label}
+	return []fyne.CanvasObject{r.item.bg, r.item.icon, r.item.customIcon, r.item.thumbnail, r.item.label, r.item.menuButton}
 }
 
 func (r *fileItemRenderer) Destroy() {
