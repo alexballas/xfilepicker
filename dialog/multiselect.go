@@ -9,6 +9,7 @@ import (
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/dialog"
 	"fyne.io/fyne/v2/lang"
+	"fyne.io/fyne/v2/layout"
 	"fyne.io/fyne/v2/storage"
 	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
@@ -115,6 +116,7 @@ func (f *fileDialog) Resize(size fyne.Size) {
 	if f.win != nil {
 		f.win.Resize(size)
 	}
+	f.DismissMenu()
 }
 
 func (f *fileDialog) Position() fyne.Position {
@@ -456,7 +458,33 @@ func (f *fileDialog) makeUI() fyne.CanvasObject {
 	)
 	split.SetOffset(0.25)
 
-	return container.NewBorder(nil, footer, nil, nil, split)
+	content := container.NewBorder(nil, footer, nil, nil, split)
+
+	// Wrap in a custom layout that detects resize
+	return container.New(&resizeLayout{
+		internal: layout.NewMaxLayout(),
+		onResize: func() {
+			f.DismissMenu()
+		},
+	}, content)
+}
+
+type resizeLayout struct {
+	internal fyne.Layout
+	onResize func()
+}
+
+func (r *resizeLayout) Layout(objects []fyne.CanvasObject, size fyne.Size) {
+	r.internal.Layout(objects, size)
+	if r.onResize != nil {
+		// Defer the resize callback to avoid modifying the UI during layout
+		// which can cause panics in Fyne driver.
+		fyne.Do(r.onResize)
+	}
+}
+
+func (r *resizeLayout) MinSize(objects []fyne.CanvasObject) fyne.Size {
+	return r.internal.MinSize(objects)
 }
 
 func (f *fileDialog) refreshDir(dir fyne.ListableURI) {
