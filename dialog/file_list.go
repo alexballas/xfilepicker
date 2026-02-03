@@ -13,6 +13,7 @@ import (
 	"fyne.io/fyne/v2/storage"
 	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
+	"github.com/FyshOS/fancyfs"
 )
 
 type fileList struct {
@@ -202,10 +203,11 @@ type fileItem struct {
 	id     int
 	uri    fyne.URI
 
-	icon      *widget.FileIcon
-	thumbnail *canvas.Image
-	label     *widget.Label
-	bg        *canvas.Rectangle
+	icon       *widget.FileIcon
+	customIcon *widget.Icon
+	thumbnail  *canvas.Image
+	label      *widget.Label
+	bg         *canvas.Rectangle
 
 	currentPath string
 	currentView ViewLayout
@@ -215,14 +217,16 @@ type fileItem struct {
 
 func newFileItem(p FilePicker) *fileItem {
 	item := &fileItem{
-		picker:    p,
-		icon:      widget.NewFileIcon(nil),
-		thumbnail: canvas.NewImageFromImage(nil),
-		label:     widget.NewLabel(""),
-		bg:        canvas.NewRectangle(theme.SelectionColor()),
+		picker:     p,
+		icon:       widget.NewFileIcon(nil),
+		customIcon: widget.NewIcon(nil),
+		thumbnail:  canvas.NewImageFromImage(nil),
+		label:      widget.NewLabel(""),
+		bg:         canvas.NewRectangle(theme.SelectionColor()),
 	}
 	item.thumbnail.FillMode = canvas.ImageFillContain
 	item.thumbnail.Hide()
+	item.customIcon.Hide()
 	item.bg.Hide()
 	item.label.Truncation = fyne.TextTruncateEllipsis
 	item.ExtendBaseWidget(item)
@@ -300,9 +304,31 @@ func (i *fileItem) setURI(u fyne.URI, view ViewLayout) {
 
 	// Thumbnail handling
 	i.icon.Show()
+	i.customIcon.Hide()
 	i.thumbnail.Hide()
 	i.thumbnail.Image = nil
 	i.thumbnail.Refresh()
+
+	// Check for fancy folder details
+	if isDir, _ := storage.CanList(u); isDir {
+		if details, err := fancyfs.DetailsForFolder(u); err == nil && details != nil {
+			if details.BackgroundResource != nil {
+				i.customIcon.SetResource(details.BackgroundResource)
+				i.icon.Hide()
+				i.customIcon.Show()
+			}
+			if details.BackgroundURI != nil {
+				// We can treat this like a pre-existing thumbnail
+				i.thumbnail.File = details.BackgroundURI.Path()
+				i.thumbnail.FillMode = details.BackgroundFill
+				i.thumbnail.Refresh()
+				i.icon.Hide()
+				i.customIcon.Hide()
+				i.thumbnail.Show()
+				return
+			}
+		}
+	}
 
 	if view == GridView {
 		if i.loadTimer != nil {
@@ -397,6 +423,9 @@ func (r *fileItemRenderer) Layout(size fyne.Size) {
 		r.item.icon.Resize(iconSize)
 		r.item.icon.Move(fyne.NewPos((size.Width-iconSize.Width)/2, theme.Padding()))
 
+		r.item.customIcon.Resize(iconSize)
+		r.item.customIcon.Move(fyne.NewPos((size.Width-iconSize.Width)/2, theme.Padding()))
+
 		if r.item.thumbnail.Visible() {
 			r.item.thumbnail.Resize(iconSize)
 			r.item.thumbnail.Move(fyne.NewPos((size.Width-iconSize.Width)/2, theme.Padding()))
@@ -413,6 +442,9 @@ func (r *fileItemRenderer) Layout(size fyne.Size) {
 		iconSize := fyne.NewSquareSize(fileInlineIconSize)
 		r.item.icon.Resize(iconSize)
 		r.item.icon.Move(fyne.NewPos(theme.Padding(), (size.Height-iconSize.Height)/2))
+
+		r.item.customIcon.Resize(iconSize)
+		r.item.customIcon.Move(fyne.NewPos(theme.Padding(), (size.Height-iconSize.Height)/2))
 
 		labelSize := fyne.NewSize(size.Width-iconSize.Width-theme.Padding()*3, size.Height)
 		r.item.label.Resize(labelSize)
@@ -436,12 +468,13 @@ func (r *fileItemRenderer) MinSize() fyne.Size {
 func (r *fileItemRenderer) Refresh() {
 	r.item.bg.Refresh()
 	r.item.icon.Refresh()
+	r.item.customIcon.Refresh()
 	r.item.thumbnail.Refresh()
 	r.item.label.Refresh()
 }
 
 func (r *fileItemRenderer) Objects() []fyne.CanvasObject {
-	return []fyne.CanvasObject{r.item.bg, r.item.icon, r.item.thumbnail, r.item.label}
+	return []fyne.CanvasObject{r.item.bg, r.item.icon, r.item.customIcon, r.item.thumbnail, r.item.label}
 }
 
 func (r *fileItemRenderer) Destroy() {

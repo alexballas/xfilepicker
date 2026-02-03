@@ -13,6 +13,7 @@ import (
 	"fyne.io/fyne/v2/storage"
 	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
+	"github.com/FyshOS/fancyfs"
 )
 
 type sidebar struct {
@@ -76,9 +77,13 @@ func (s *sidebar) loadFavorites() {
 	homeDir, _ := os.UserHomeDir()
 	homeURI := storage.NewFileURI(homeDir)
 	if l, err := storage.ListerForURI(homeURI); err == nil {
+		icon := theme.HomeIcon()
+		if details, err := fancyfs.DetailsForFolder(homeURI); err == nil && details != nil && details.BackgroundResource != nil {
+			icon = details.BackgroundResource
+		}
 		s.items = append(s.items, favoriteItem{
 			locName: "Home",
-			locIcon: theme.HomeIcon(),
+			locIcon: icon,
 			loc:     l,
 		})
 	}
@@ -94,19 +99,8 @@ func (s *sidebar) loadFavorites() {
 		if err == nil {
 			if l, err := storage.ListerForURI(uri); err == nil {
 				icon := theme.FolderIcon()
-				switch name {
-				case "Desktop":
-					icon = theme.DesktopIcon()
-				case "Documents":
-					icon = theme.DocumentIcon()
-				case "Downloads":
-					icon = theme.DownloadIcon()
-				case "Music":
-					icon = theme.MediaMusicIcon()
-				case "Pictures":
-					icon = theme.MediaPhotoIcon()
-				case "Videos", "Movies":
-					icon = theme.MediaVideoIcon()
+				if details, err := fancyfs.DetailsForFolder(uri); err == nil && details != nil && details.BackgroundResource != nil {
+					icon = details.BackgroundResource
 				}
 
 				s.items = append(s.items, favoriteItem{

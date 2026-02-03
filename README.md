@@ -25,6 +25,7 @@ While Fyne's default picker is excellent for general use, `xfilepicker` is an ex
 *   **Type-to-Search**: Simply start typing anywhere in the dialog to instantly focus the search bar and filter results.
 *   **Smart Truncation**: Filenames are intelligently truncated to a maximum of 3 lines in Grid View, ensuring the file extension is always visible.
 *   **Search Relevance**: Search results are "Smart Sorted" to prioritize files starting with your query.
+*   **Rich Folder Visuals**: Automatically uses correct icons for system folders (Desktop, Music, etc.) and supports custom folder covers (via `.background.png`) using `fancyfs`.
 *   **Localized**: Fully internationalized with support for Fyne's `lang` package.
 *   **Persistence**: Remembers your preferred view layout (Grid/List), hidden file toggle, and FFmpeg path across sessions.
 
