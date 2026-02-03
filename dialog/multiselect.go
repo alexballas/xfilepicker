@@ -71,6 +71,10 @@ type fileDialog struct {
 }
 
 func (f *fileDialog) Show() {
+	if fileOpenOSOverride(f) {
+		return
+	}
+
 	content := f.makeUI()
 	f.win = widget.NewModalPopUp(content, f.parent.Canvas())
 	f.win.Resize(fyne.NewSize(1000, 700))

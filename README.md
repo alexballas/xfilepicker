@@ -8,6 +8,7 @@ While Fyne's default picker is excellent for general use, `xfilepicker` is an ex
 
 ## Key Features & Enhancements
 *   **Complete Modifier Support**: Fully supports `Ctrl+Click` (additive), `Shift+Click` (range), and `Drag-Select`.
+*   **Drag-and-Drop Selection**: Intuitive marquee selection. Click and drag on the background to draw a rectangle and select multiple files at once. Supports scrolling and precise intersection with grid items.
 *   **Flexible API**: Easily toggle between single-file and multiple-file selection via a simple boolean flag.
 
 ### 2. Intelligent Thumbnail Management
