@@ -514,15 +514,7 @@ func (r *fileItemRenderer) Layout(size fyne.Size) {
 
 func (r *fileItemRenderer) MinSize() fyne.Size {
 	view := r.item.picker.GetView()
-	if view == GridView {
-		s, _ := fyne.CurrentApp().Driver().RenderedTextSize("A", theme.TextSize(), r.item.label.TextStyle, nil)
-		lineHeight := s.Height
-		return fyne.NewSize(fileIconCellWidth, fileIconSize+lineHeight*3.5+theme.Padding()*3.0)
-	}
-
-	iconSize := fileInlineIconSize
-	textMin := r.item.label.MinSize()
-	return fyne.NewSize(float32(iconSize)+textMin.Width+theme.Padding()*4, fyne.Max(float32(iconSize), textMin.Height+theme.Padding()))
+	return calculateItemSize(view)
 }
 
 func (r *fileItemRenderer) Refresh() {
@@ -544,32 +536,7 @@ func (r *fileItemRenderer) Destroy() {
 }
 
 func (f *fileList) getItemSize() fyne.Size {
-	// Create a dummy item to measure
-	// Since we can't easily access the internal template of the GridWrap/List,
-	// we assume consistent sizing based on constants and theme.
-	// This mirrors fileItemRenderer.MinSize
-
-	// Text height
-	s, _ := fyne.CurrentApp().Driver().RenderedTextSize("A", theme.TextSize(), fyne.TextStyle{}, nil)
-	lineHeight := s.Height
-
-	if f.view == GridView {
-		return fyne.NewSize(fileIconCellWidth, fileIconSize+lineHeight*3.5+theme.Padding()*3.0)
-	}
-
-	// List View
-	iconSize := fileInlineIconSize
-	// For list view width, we assume it fills the width, but for bounds check we treat it as infinite width or container width.
-	// Height is the main constraint.
-	// Typically list item height is icon size or text height + padding.
-	// MinSize in renderer: Max(icon, text) + padding
-	// Text height is 1 line.
-	textMinHeight := lineHeight
-	height := fyne.Max(float32(iconSize), textMinHeight+theme.Padding())
-	height += theme.Padding() * 2 // Some extra padding in lists usually? The renderer adds Padding*4 width, Padding height?
-	// renderer: fyne.Max(float32(iconSize), textMinHeight+theme.Padding())
-	// Let's stick to the renderer's MinSize exactly.
-	return fyne.NewSize(0, fyne.Max(float32(iconSize), textMinHeight+theme.Padding()))
+	return calculateItemSize(f.view)
 }
 
 func (f *fileList) onSelectionChange(tl, br fyne.Position) {
@@ -596,12 +563,33 @@ func (f *fileList) onSelectionChange(tl, br fyne.Position) {
 			cols = 1
 		}
 
-		// Optimize: Check bounds of indices instead of all indices?
-		// But simple iteration is safer given layout uncertainties.
-		// Since we have N files, let's iterate. O(N) is fine for standard file counts < few thousands.
-		// If huge, optimization needed.
+		// Robust Logic:
+		// 1. Calculate the range of rows that the rectangle touches.
+		// 2. Iterate only through items in those rows.
+		// 3. Perform strict intersection check.
 
-		for i := 0; i < len(f.filtered); i++ {
+		startRow := int(tl.Y / itemSize.Height)
+		endRow := int(br.Y / itemSize.Height)
+
+		// Clamp rows
+		maxRow := (len(f.filtered) - 1) / cols
+		if startRow < 0 {
+			startRow = 0
+		}
+		if endRow > maxRow {
+			endRow = maxRow
+		}
+
+		startIndex := startRow * cols
+		// endRow is inclusive in our logic (the row touched by bottom of rect)
+		// So iterate up to end of that row
+		endIndex := (endRow + 1) * cols
+		if endIndex > len(f.filtered) {
+			endIndex = len(f.filtered)
+		}
+
+		// Iterate through candidates
+		for i := startIndex; i < endIndex; i++ {
 			col := i % cols
 			row := i / cols
 
@@ -610,10 +598,7 @@ func (f *fileList) onSelectionChange(tl, br fyne.Position) {
 			x2 := x1 + itemSize.Width
 			y2 := y1 + itemSize.Height
 
-			// Check intersection
-			// Rect 1: tl, br
-			// Rect 2: (x1,y1), (x2,y2)
-
+			// Strict Intersection
 			if x1 < br.X && x2 > tl.X && y1 < br.Y && y2 > tl.Y {
 				ids = append(ids, i)
 			}
