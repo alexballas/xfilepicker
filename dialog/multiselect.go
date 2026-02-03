@@ -462,26 +462,30 @@ func (f *fileDialog) makeUI() fyne.CanvasObject {
 	searchWrapper := container.NewGridWrap(fyne.NewSize(220, 36), f.searchEntry)
 	controlsRow := container.NewHBox(searchWrapper, sortSelect, newFolderBtn, viewToggle, optionsBtn)
 
-	// Right-aligned controls row. Use HScroll to prevent overlapping sidebar in small windows.
-	topRowWithScroll := container.NewHScroll(container.NewBorder(nil, nil, nil, controlsRow, nil))
-	topRowWithScroll.Direction = container.ScrollHorizontalOnly
+	// Top Bar with Title and Controls
+	titleText := lang.L("Open File")
+	if f.allowMultiple {
+		titleText = lang.L("Open Files")
+	}
+	titleLabel := widget.NewLabelWithStyle(titleText, fyne.TextAlignLeading, fyne.TextStyle{Bold: true})
 
-	// Header Layout:
-	// Row 1: Search & Controls (Right aligned, scrollable if narrow)
-	// Row 2: Breadcrumbs (scrollable)
-	header := container.NewPadded(container.NewVBox(
-		topRowWithScroll,
-		widget.NewSeparator(),
-		f.breadcrumb.scroll,
-	))
+	topBarContent := container.NewBorder(nil, nil, titleLabel, controlsRow, nil)
+	topBarScroll := container.NewHScroll(topBarContent)
+	topBarScroll.Direction = container.ScrollHorizontalOnly
+
+	// Global Header (Top Bar + Separator)
+	// Usage of VBox ensures the separator is below the toolbar
+	globalHeader := container.NewVBox(topBarScroll, widget.NewSeparator())
+
+	// File List Header: just the breadcrumbs
+	// We keep the Padded container for consistent spacing
+	breadcrumbsArea := container.NewPadded(f.breadcrumb.scroll)
 
 	split := container.NewHSplit(
-		f.sidebar.list,
-		container.NewBorder(header, nil, nil, nil, f.fileList.content),
+		container.NewPadded(f.sidebar.list),
+		container.NewBorder(breadcrumbsArea, nil, nil, nil, f.fileList.content),
 	)
 	split.SetOffset(0.25)
-
-	content := container.NewBorder(nil, footer, nil, nil, split)
 
 	// Wrap in a custom layout that detects resize
 	return container.New(&resizeLayout{
@@ -489,7 +493,7 @@ func (f *fileDialog) makeUI() fyne.CanvasObject {
 		onResize: func() {
 			f.DismissMenu()
 		},
-	}, content)
+	}, container.NewBorder(globalHeader, footer, nil, nil, split))
 }
 
 type resizeLayout struct {
@@ -512,7 +516,10 @@ func (r *resizeLayout) MinSize(objects []fyne.CanvasObject) fyne.Size {
 
 func (f *fileDialog) refreshDir(dir fyne.ListableURI) {
 	f.dir = dir
-	f.breadcrumb.update(dir)
+
+	if f.breadcrumb != nil {
+		f.breadcrumb.update(dir)
+	}
 
 	files, err := dir.List()
 	if err != nil {
@@ -538,13 +545,18 @@ func (f *fileDialog) refreshDir(dir fyne.ListableURI) {
 	}
 	files = filteredFiles
 
-	f.fileList.setFiles(files)
+	if f.fileList != nil {
+		f.fileList.setFiles(files)
+	}
 	f.selected = make(map[string]fyne.URI)
 	f.anchor = -1
 	f.updateFooter()
 }
 
 func (f *fileDialog) updateFooter() {
+	if f.fileName == nil {
+		return
+	}
 	var names []string
 	hasDir := false
 	for _, u := range f.selected {
