@@ -493,7 +493,7 @@ func (r *fileItemRenderer) MinSize() fyne.Size {
 	if view == GridView {
 		s, _ := fyne.CurrentApp().Driver().RenderedTextSize("A", theme.TextSize(), r.item.label.TextStyle, nil)
 		lineHeight := s.Height
-		return fyne.NewSize(fileIconCellWidth, fileIconSize+lineHeight*4.0+theme.Padding()*3.0)
+		return fyne.NewSize(fileIconCellWidth, fileIconSize+lineHeight*3.5+theme.Padding()*3.0)
 	}
 
 	iconSize := fileInlineIconSize
