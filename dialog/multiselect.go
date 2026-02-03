@@ -188,6 +188,25 @@ func (f *fileDialog) Select(id int) {
 	f.fileList.refresh()
 }
 
+func (f *fileDialog) SelectMultiple(ids []int) {
+	if !f.allowMultiple {
+		return
+	}
+	f.selected = make(map[string]fyne.URI)
+	for _, id := range ids {
+		if id < 0 || id >= len(f.fileList.filtered) {
+			continue
+		}
+		uri := f.fileList.filtered[id]
+		f.selected[uri.String()] = uri
+	}
+	if len(ids) > 0 {
+		f.anchor = ids[len(ids)-1]
+	}
+	f.updateFooter()
+	f.fileList.refresh()
+}
+
 func (f *fileDialog) ToggleSelection(id int) {
 	if !f.allowMultiple {
 		f.Select(id)

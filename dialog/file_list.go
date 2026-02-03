@@ -31,8 +31,13 @@ type fileList struct {
 	sortOrder FileSortOrder
 
 	// Cached widgets
-	grid *widget.GridWrap
-	list *widget.List
+	grid    *widget.GridWrap
+	list    *widget.List
+	overlay *selectionOverlay
+
+	// State for drag optimization and click guarding
+	lastDragSelection []int
+	lastDragTime      time.Time
 }
 
 type FileSortOrder int
@@ -51,6 +56,8 @@ func newFileList(p FilePicker) *fileList {
 		picker:    p,
 		sortOrder: SortNameAsc,
 	}
+
+	f.overlay = newSelectionOverlay(nil, f.onSelectionChange, f.onSelectionEnd)
 
 	f.grid = widget.NewGridWrap(
 		func() int { return len(f.filtered) },
@@ -177,8 +184,11 @@ func (f *fileList) refresh() {
 		target = f.list
 	}
 
-	if f.content.Content == nil || !isPadded(f.content.Content, target) {
-		f.content.Content = container.NewPadded(target)
+	if f.content.Content == nil || !isPadded(f.content.Content, f.overlay) {
+		f.overlay.content = target
+		f.content.Content = container.NewPadded(f.overlay)
+	} else {
+		f.overlay.content = target
 	}
 
 	f.content.Refresh()
@@ -380,6 +390,13 @@ func (i *fileItem) Tapped(e *fyne.PointEvent) {
 		return
 	}
 
+	// Guard against accidental clicks after drag
+	if fd, ok := i.picker.(*fileDialog); ok {
+		if time.Since(fd.fileList.lastDragTime) < 200*time.Millisecond {
+			return
+		}
+	}
+
 	now := time.Now()
 	// Detect double click
 	if now.Sub(i.lastClick) < fyne.CurrentApp().Driver().DoubleTapDelay() {
@@ -410,6 +427,13 @@ func (i *fileItem) MouseUp(e *desktop.MouseEvent) {
 
 	if e.Button != desktop.MouseButtonPrimary {
 		return
+	}
+
+	// Guard against accidental clicks after drag
+	if fd, ok := i.picker.(*fileDialog); ok {
+		if time.Since(fd.fileList.lastDragTime) < 200*time.Millisecond {
+			return
+		}
 	}
 
 	if e.Modifier&fyne.KeyModifierControl != 0 {
@@ -517,4 +541,124 @@ func (r *fileItemRenderer) Destroy() {
 	if r.item.loadTimer != nil {
 		r.item.loadTimer.Stop()
 	}
+}
+
+func (f *fileList) getItemSize() fyne.Size {
+	// Create a dummy item to measure
+	// Since we can't easily access the internal template of the GridWrap/List,
+	// we assume consistent sizing based on constants and theme.
+	// This mirrors fileItemRenderer.MinSize
+
+	// Text height
+	s, _ := fyne.CurrentApp().Driver().RenderedTextSize("A", theme.TextSize(), fyne.TextStyle{}, nil)
+	lineHeight := s.Height
+
+	if f.view == GridView {
+		return fyne.NewSize(fileIconCellWidth, fileIconSize+lineHeight*3.5+theme.Padding()*3.0)
+	}
+
+	// List View
+	iconSize := fileInlineIconSize
+	// For list view width, we assume it fills the width, but for bounds check we treat it as infinite width or container width.
+	// Height is the main constraint.
+	// Typically list item height is icon size or text height + padding.
+	// MinSize in renderer: Max(icon, text) + padding
+	// Text height is 1 line.
+	textMinHeight := lineHeight
+	height := fyne.Max(float32(iconSize), textMinHeight+theme.Padding())
+	height += theme.Padding() * 2 // Some extra padding in lists usually? The renderer adds Padding*4 width, Padding height?
+	// renderer: fyne.Max(float32(iconSize), textMinHeight+theme.Padding())
+	// Let's stick to the renderer's MinSize exactly.
+	return fyne.NewSize(0, fyne.Max(float32(iconSize), textMinHeight+theme.Padding()))
+}
+
+func (f *fileList) onSelectionChange(tl, br fyne.Position) {
+	if len(f.filtered) == 0 {
+		return
+	}
+
+	itemSize := f.getItemSize()
+	var ids []int
+
+	if f.view == GridView {
+		containerWidth := f.grid.Size().Width
+		if containerWidth <= 0 {
+			return
+		}
+
+		// GridWrap logic:
+		// items flow left to right, then wrap.
+		// items are centered or spaced? GridWrap usually fills lines.
+		// We assume simplest flow: x += width.
+
+		cols := int(containerWidth / itemSize.Width)
+		if cols < 1 {
+			cols = 1
+		}
+
+		// Optimize: Check bounds of indices instead of all indices?
+		// But simple iteration is safer given layout uncertainties.
+		// Since we have N files, let's iterate. O(N) is fine for standard file counts < few thousands.
+		// If huge, optimization needed.
+
+		for i := 0; i < len(f.filtered); i++ {
+			col := i % cols
+			row := i / cols
+
+			x1 := float32(col) * itemSize.Width
+			y1 := float32(row) * itemSize.Height
+			x2 := x1 + itemSize.Width
+			y2 := y1 + itemSize.Height
+
+			// Check intersection
+			// Rect 1: tl, br
+			// Rect 2: (x1,y1), (x2,y2)
+
+			if x1 < br.X && x2 > tl.X && y1 < br.Y && y2 > tl.Y {
+				ids = append(ids, i)
+			}
+		}
+
+	} else {
+		// List View
+		width := f.list.Size().Width
+		height := itemSize.Height
+
+		for i := 0; i < len(f.filtered); i++ {
+			y1 := float32(i) * height
+			y2 := y1 + height
+
+			// In list view, width is full width
+			if 0 < br.X && width > tl.X && y1 < br.Y && y2 > tl.Y {
+				ids = append(ids, i)
+			}
+		}
+	}
+
+	// Optimization: check if selection actually changed
+	if sameSelection(f.lastDragSelection, ids) {
+		return
+	}
+	f.lastDragSelection = ids
+
+	f.picker.SelectMultiple(ids)
+}
+
+func (f *fileList) onSelectionEnd() {
+	f.lastDragSelection = nil
+	f.lastDragTime = time.Now()
+}
+
+func sameSelection(a, b []int) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	// ids are appended in order in loop, so they should be sorted if grid traversal is consistent.
+	// Our traversal (row/col or linear) produces sorted indices.
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
 }

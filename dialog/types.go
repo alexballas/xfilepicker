@@ -39,6 +39,7 @@ type FilePicker interface {
 	SetView(view ViewLayout)
 	GetView() ViewLayout
 	Select(id int)
+	SelectMultiple(ids []int)
 	ToggleSelection(id int)
 	ExtendSelection(id int)
 	IsSelected(uri fyne.URI) bool
