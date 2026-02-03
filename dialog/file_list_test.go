@@ -20,6 +20,7 @@ func (m *mockPicker) ExtendSelection(id int)              {}
 func (m *mockPicker) IsSelected(uri fyne.URI) bool        { return false }
 func (m *mockPicker) OpenSelection()                      {}
 func (m *mockPicker) SetFilter(filter storage.FileFilter) {}
+func (m *mockPicker) IsMultiSelect() bool                 { return false }
 
 func TestFileList_Sort_Filter(t *testing.T) {
 	test.NewApp()

@@ -44,4 +44,5 @@ type FilePicker interface {
 	IsSelected(uri fyne.URI) bool
 	OpenSelection()
 	SetFilter(filter storage.FileFilter)
+	IsMultiSelect() bool
 }

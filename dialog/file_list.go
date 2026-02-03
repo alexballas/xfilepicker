@@ -10,6 +10,7 @@ import (
 	"fyne.io/fyne/v2/canvas"
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/driver/desktop"
+	"fyne.io/fyne/v2/lang"
 	"fyne.io/fyne/v2/storage"
 	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
@@ -407,6 +408,24 @@ func (i *fileItem) MouseUp(e *desktop.MouseEvent) {
 	} else {
 		i.picker.Select(i.id)
 	}
+}
+
+func (i *fileItem) SecondaryTapped(e *fyne.PointEvent) {
+	if !i.picker.IsMultiSelect() {
+		return
+	}
+
+	label := lang.L("Select")
+	if i.picker.IsSelected(i.uri) {
+		label = lang.L("Deselect")
+	}
+
+	menuItem := fyne.NewMenuItem(label, func() {
+		i.picker.ToggleSelection(i.id)
+	})
+
+	menu := fyne.NewMenu("", menuItem)
+	widget.ShowPopUpMenuAtPosition(menu, fyne.CurrentApp().Driver().CanvasForObject(i), e.AbsolutePosition)
 }
 
 type fileItemRenderer struct {

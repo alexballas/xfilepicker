@@ -142,6 +142,10 @@ func (f *fileDialog) GetView() ViewLayout {
 	return f.view
 }
 
+func (f *fileDialog) IsMultiSelect() bool {
+	return f.allowMultiple
+}
+
 func (f *fileDialog) Select(id int) {
 	if id < 0 || id >= len(f.fileList.filtered) {
 		return
