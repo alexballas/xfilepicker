@@ -126,6 +126,9 @@ func (f *fileDialog) SetLocation(dir fyne.ListableURI) {
 	if f.searchEntry != nil {
 		f.searchEntry.SetText("")
 	}
+	if f.sidebar != nil {
+		f.sidebar.SyncSelection(dir)
+	}
 	f.refreshDir(dir)
 }
 
