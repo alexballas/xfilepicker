@@ -90,9 +90,6 @@ func (s *sidebar) loadFavorites() {
 
 	// XDG Folders
 	order := []string{"Desktop", "Documents", "Downloads", "Music", "Pictures", "Videos"}
-	if runtime.GOOS == "darwin" {
-		order = []string{"Desktop", "Documents", "Downloads", "Music", "Pictures", "Movies"}
-	}
 
 	for _, name := range order {
 		uri, err := getFavoriteLocation(homeURI, name)
