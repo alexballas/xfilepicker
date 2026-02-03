@@ -419,18 +419,8 @@ func (f *fileDialog) makeUI() fyne.CanvasObject {
 		})
 		hiddenFiles.Checked = f.showHidden
 
-		ffmpegEntry := widget.NewEntry()
-		ffmpegEntry.SetPlaceHolder(lang.L("ffmpeg path (default: ffmpeg)"))
-		ffmpegEntry.SetText(GetThumbnailManager().ffmpegPath)
-		ffmpegEntry.OnChanged = func(s string) {
-			GetThumbnailManager().SetFFmpegPath(s)
-		}
-
 		content := container.NewVBox(
 			hiddenFiles,
-			widget.NewSeparator(),
-			widget.NewLabel(lang.L("FFmpeg Path")),
-			ffmpegEntry,
 		)
 		pop := widget.NewPopUp(content, f.win.Canvas)
 		pop.ShowAtPosition(fyne.CurrentApp().Driver().AbsolutePositionForObject(optionsBtn).Add(fyne.NewPos(0, optionsBtn.Size().Height)))
