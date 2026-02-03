@@ -10,15 +10,16 @@ import (
 
 type mockPicker struct{}
 
-func (m *mockPicker) SetLocation(dir fyne.ListableURI) {}
-func (m *mockPicker) Refresh()                         {}
-func (m *mockPicker) SetView(view ViewLayout)          {}
-func (m *mockPicker) GetView() ViewLayout              { return GridView }
-func (m *mockPicker) Select(id int)                    {}
-func (m *mockPicker) ToggleSelection(id int)           {}
-func (m *mockPicker) ExtendSelection(id int)           {}
-func (m *mockPicker) IsSelected(uri fyne.URI) bool     { return false }
-func (m *mockPicker) OpenSelection()                   {}
+func (m *mockPicker) SetLocation(dir fyne.ListableURI)    {}
+func (m *mockPicker) Refresh()                            {}
+func (m *mockPicker) SetView(view ViewLayout)             {}
+func (m *mockPicker) GetView() ViewLayout                 { return GridView }
+func (m *mockPicker) Select(id int)                       {}
+func (m *mockPicker) ToggleSelection(id int)              {}
+func (m *mockPicker) ExtendSelection(id int)              {}
+func (m *mockPicker) IsSelected(uri fyne.URI) bool        { return false }
+func (m *mockPicker) OpenSelection()                      {}
+func (m *mockPicker) SetFilter(filter storage.FileFilter) {}
 
 func TestFileList_Sort_Filter(t *testing.T) {
 	test.NewApp()

@@ -2,6 +2,7 @@ package dialog
 
 import (
 	"fyne.io/fyne/v2"
+	"fyne.io/fyne/v2/storage"
 )
 
 // ViewLayout can be passed to SetView() to set the view of
@@ -42,4 +43,5 @@ type FilePicker interface {
 	ExtendSelection(id int)
 	IsSelected(uri fyne.URI) bool
 	OpenSelection()
+	SetFilter(filter storage.FileFilter)
 }

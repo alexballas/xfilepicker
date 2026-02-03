@@ -60,6 +60,8 @@ type fileDialog struct {
 	allowMultiple bool
 	anchor        int // Selection anchor for Shift-Select
 
+	extensionFilter storage.FileFilter
+
 	// Search & Sort
 	searchEntry *widget.Entry
 
@@ -203,6 +205,13 @@ func (f *fileDialog) IsSelected(uri fyne.URI) bool {
 
 func (f *fileDialog) OpenSelection() {
 	f.open.OnTapped()
+}
+
+func (f *fileDialog) SetFilter(filter storage.FileFilter) {
+	f.extensionFilter = filter
+	if f.win != nil {
+		f.refreshDir(f.dir)
+	}
 }
 
 func (f *fileDialog) typedRuneHook(r rune) {
@@ -423,16 +432,24 @@ func (f *fileDialog) refreshDir(dir fyne.ListableURI) {
 		return
 	}
 
-	// Filter hidden
-	if !f.showHidden {
-		var visible []fyne.URI
-		for _, file := range files {
-			if !isHidden(file) {
-				visible = append(visible, file)
-			}
+	// Filter hidden & extensions
+	var filteredFiles []fyne.URI
+	for _, file := range files {
+		if !f.showHidden && isHidden(file) {
+			continue
 		}
-		files = visible
+
+		if isDir, _ := storage.CanList(file); isDir {
+			// Always show directories
+			filteredFiles = append(filteredFiles, file)
+			continue
+		}
+
+		if f.extensionFilter == nil || f.extensionFilter.Matches(file) {
+			filteredFiles = append(filteredFiles, file)
+		}
 	}
+	files = filteredFiles
 
 	f.fileList.setFiles(files)
 	f.selected = make(map[string]fyne.URI)

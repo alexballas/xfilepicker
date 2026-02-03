@@ -7,6 +7,7 @@ import (
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/app"
 	"fyne.io/fyne/v2/container"
+	"fyne.io/fyne/v2/storage"
 	"fyne.io/fyne/v2/widget"
 
 	"github.com/alexballas/xfilepicker/dialog"
@@ -61,10 +62,36 @@ func main() {
 		}, w, false)
 	})
 
+	btnSRT := widget.NewButton("Open SRT Files Only", func() {
+		// NewFileOpen gives us the object, so we can call SetFilter before Show
+		d := dialog.NewFileOpen(func(readers []fyne.URIReadCloser, err error) {
+			if err != nil {
+				label.SetText("Error: " + err.Error())
+				return
+			}
+			if readers == nil {
+				label.SetText("Cancelled")
+				return
+			}
+
+			if len(readers) > 0 {
+				label.SetText("Selected (SRT): " + readers[0].URI().Name())
+				readers[0].Close()
+			}
+		}, w, false) // Single select
+
+		// Since NewFileOpen returns dyne.Dialog, we need to cast to access SetFilter
+		if f, ok := d.(interface{ SetFilter(storage.FileFilter) }); ok {
+			f.SetFilter(storage.NewExtensionFileFilter([]string{".srt"}))
+		}
+		d.Show()
+	})
+
 	w.SetContent(container.NewVBox(
 		widget.NewLabel("Click the buttons below to test different modes."),
 		btnMulti,
 		btnSingle,
+		btnSRT,
 		label,
 	))
 
