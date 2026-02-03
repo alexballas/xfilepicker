@@ -209,7 +209,6 @@ type fileItem struct {
 	thumbnail  *canvas.Image
 	label      *widget.Label
 	bg         *canvas.Rectangle
-	menuButton *widget.Button
 
 	currentPath string
 	currentView ViewLayout
@@ -226,11 +225,6 @@ func newFileItem(p FilePicker) *fileItem {
 		label:      widget.NewLabel(""),
 		bg:         canvas.NewRectangle(theme.SelectionColor()),
 	}
-	item.menuButton = widget.NewButtonWithIcon("", theme.MoreVerticalIcon(), func() {
-		item.showContextMenu(fyne.CurrentApp().Driver().AbsolutePositionForObject(item.menuButton))
-	})
-	item.menuButton.Importance = widget.LowImportance
-	item.menuButton.Hide()
 	item.thumbnail.FillMode = canvas.ImageFillContain
 	item.thumbnail.Hide()
 	item.customIcon.Hide()
@@ -238,6 +232,7 @@ func newFileItem(p FilePicker) *fileItem {
 	item.label.Truncation = fyne.TextTruncateEllipsis
 	item.ExtendBaseWidget(item)
 	return item
+
 }
 
 func (i *fileItem) CreateRenderer() fyne.WidgetRenderer {
@@ -478,11 +473,6 @@ func (r *fileItemRenderer) Layout(size fyne.Size) {
 		r.item.label.Resize(fyne.NewSize(size.Width, textHeight))
 		r.item.label.Move(fyne.NewPos(0, iconSize.Height+theme.Padding()*1.5))
 
-		if r.item.menuButton.Visible() {
-			btnSize := fyne.NewSize(24, 24)
-			r.item.menuButton.Resize(btnSize)
-			r.item.menuButton.Move(fyne.NewPos(size.Width-btnSize.Width-theme.Padding()/2, theme.Padding()/2))
-		}
 	} else {
 		iconSize := fyne.NewSquareSize(fileInlineIconSize)
 		r.item.icon.Resize(iconSize)
@@ -495,11 +485,6 @@ func (r *fileItemRenderer) Layout(size fyne.Size) {
 		r.item.label.Resize(labelSize)
 		r.item.label.Move(fyne.NewPos(iconSize.Width+theme.Padding()*2, 0))
 
-		if r.item.menuButton.Visible() {
-			btnSize := fyne.NewSize(32, 32)
-			r.item.menuButton.Resize(btnSize)
-			r.item.menuButton.Move(fyne.NewPos(size.Width-btnSize.Width-theme.Padding(), (size.Height-btnSize.Height)/2))
-		}
 	}
 }
 
@@ -522,16 +507,10 @@ func (r *fileItemRenderer) Refresh() {
 	r.item.customIcon.Refresh()
 	r.item.thumbnail.Refresh()
 	r.item.label.Refresh()
-	if r.item.picker.IsMultiSelect() {
-		r.item.menuButton.Show()
-	} else {
-		r.item.menuButton.Hide()
-	}
-	r.item.menuButton.Refresh()
 }
 
 func (r *fileItemRenderer) Objects() []fyne.CanvasObject {
-	return []fyne.CanvasObject{r.item.bg, r.item.icon, r.item.customIcon, r.item.thumbnail, r.item.label, r.item.menuButton}
+	return []fyne.CanvasObject{r.item.bg, r.item.icon, r.item.customIcon, r.item.thumbnail, r.item.label}
 }
 
 func (r *fileItemRenderer) Destroy() {
