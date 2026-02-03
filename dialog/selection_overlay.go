@@ -22,6 +22,8 @@ type selectionOverlay struct {
 
 	onChanged func(tl, br fyne.Position)
 	onEnd     func()
+
+	debugRects []fyne.CanvasObject
 }
 
 func newSelectionOverlay(content fyne.CanvasObject, onChanged func(tl, br fyne.Position), onEnd func()) *selectionOverlay {
@@ -41,6 +43,11 @@ func newSelectionOverlay(content fyne.CanvasObject, onChanged func(tl, br fyne.P
 	s.rect.Hide()
 	s.ExtendBaseWidget(s)
 	return s
+}
+
+func (s *selectionOverlay) setDebugRects(rects []fyne.CanvasObject) {
+	s.debugRects = rects
+	s.Refresh()
 }
 
 func (s *selectionOverlay) CreateRenderer() fyne.WidgetRenderer {
@@ -141,7 +148,10 @@ func (r *selectionOverlayRenderer) Refresh() {
 }
 
 func (r *selectionOverlayRenderer) Objects() []fyne.CanvasObject {
-	return []fyne.CanvasObject{r.s.content, r.s.rect}
+	objs := []fyne.CanvasObject{r.s.content}
+	objs = append(objs, r.s.debugRects...)
+	objs = append(objs, r.s.rect)
+	return objs
 }
 
 func (r *selectionOverlayRenderer) Destroy() {}

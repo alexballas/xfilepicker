@@ -38,6 +38,7 @@ type fileList struct {
 	// State for drag optimization and click guarding
 	lastDragSelection []int
 	lastDragTime      time.Time
+	dragSelecting     bool
 }
 
 type FileSortOrder int
@@ -392,7 +393,7 @@ func (i *fileItem) Tapped(e *fyne.PointEvent) {
 
 	// Guard against accidental clicks after drag
 	if fd, ok := i.picker.(*fileDialog); ok {
-		if time.Since(fd.fileList.lastDragTime) < 200*time.Millisecond {
+		if fd.fileList.dragSelecting || time.Since(fd.fileList.lastDragTime) < 200*time.Millisecond {
 			return
 		}
 	}
@@ -431,7 +432,7 @@ func (i *fileItem) MouseUp(e *desktop.MouseEvent) {
 
 	// Guard against accidental clicks after drag
 	if fd, ok := i.picker.(*fileDialog); ok {
-		if time.Since(fd.fileList.lastDragTime) < 200*time.Millisecond {
+		if fd.fileList.dragSelecting || time.Since(fd.fileList.lastDragTime) < 200*time.Millisecond {
 			return
 		}
 	}
@@ -540,6 +541,10 @@ func (f *fileList) getItemSize() fyne.Size {
 }
 
 func (f *fileList) onSelectionChange(tl, br fyne.Position) {
+	// Mark as actively drag-selecting so MouseUp handlers on items don't override selection.
+	// This is important because on some platforms the MouseUp event can fire before DragEnd.
+	f.dragSelecting = true
+
 	if len(f.filtered) == 0 {
 		return
 	}
@@ -548,28 +553,28 @@ func (f *fileList) onSelectionChange(tl, br fyne.Position) {
 	var ids []int
 
 	if f.view == GridView {
-		containerWidth := f.grid.Size().Width
-		if containerWidth <= 0 {
-			return
-		}
+		// widget.GridWrap adds spacing based on theme.SizeNamePadding and maintains its own scroll offset.
+		// Convert selection rect from viewport coordinates into content coordinates by adding the scroll offset.
+		pad := f.grid.Theme().Size(theme.SizeNamePadding)
+		offsetY := f.grid.GetScrollOffset()
+		tl = tl.Add(fyne.NewPos(0, offsetY))
+		br = br.Add(fyne.NewPos(0, offsetY))
 
-		// GridWrap logic:
-		// items flow left to right, then wrap.
-		// items are centered or spaced? GridWrap usually fills lines.
-		// We assume simplest flow: x += width.
-
-		cols := int(containerWidth / itemSize.Width)
+		cols := f.grid.ColumnCount()
 		if cols < 1 {
 			cols = 1
 		}
+
+		stepX := itemSize.Width + pad
+		stepY := itemSize.Height + pad
 
 		// Robust Logic:
 		// 1. Calculate the range of rows that the rectangle touches.
 		// 2. Iterate only through items in those rows.
 		// 3. Perform strict intersection check.
 
-		startRow := int(tl.Y / itemSize.Height)
-		endRow := int(br.Y / itemSize.Height)
+		startRow := int(tl.Y / stepY)
+		endRow := int(br.Y / stepY)
 
 		// Clamp rows
 		maxRow := (len(f.filtered) - 1) / cols
@@ -580,37 +585,48 @@ func (f *fileList) onSelectionChange(tl, br fyne.Position) {
 			endRow = maxRow
 		}
 
-		startIndex := startRow * cols
-		// endRow is inclusive in our logic (the row touched by bottom of rect)
-		// So iterate up to end of that row
-		endIndex := (endRow + 1) * cols
-		if endIndex > len(f.filtered) {
-			endIndex = len(f.filtered)
+		startCol := int(tl.X / stepX)
+		endCol := int(br.X / stepX)
+		if startCol < 0 {
+			startCol = 0
+		}
+		if endCol > cols-1 {
+			endCol = cols - 1
 		}
 
-		// Iterate through candidates
-		for i := startIndex; i < endIndex; i++ {
-			col := i % cols
-			row := i / cols
+		for row := startRow; row <= endRow; row++ {
+			for col := startCol; col <= endCol; col++ {
+				i := row*cols + col
+				if i < 0 || i >= len(f.filtered) {
+					continue
+				}
 
-			x1 := float32(col) * itemSize.Width
-			y1 := float32(row) * itemSize.Height
-			x2 := x1 + itemSize.Width
-			y2 := y1 + itemSize.Height
+				x1 := float32(col) * stepX
+				y1 := float32(row) * stepY
+				x2 := x1 + itemSize.Width
+				y2 := y1 + itemSize.Height
 
-			// Strict Intersection
-			if x1 < br.X && x2 > tl.X && y1 < br.Y && y2 > tl.Y {
-				ids = append(ids, i)
+				if x1 < br.X && x2 > tl.X && y1 < br.Y && y2 > tl.Y {
+					ids = append(ids, i)
+				}
 			}
 		}
 
 	} else {
 		// List View
+		// widget.List adds spacing based on theme.SizeNamePadding and maintains its own scroll offset.
+		// Convert selection rect from viewport coordinates into content coordinates by adding the scroll offset.
+		pad := f.list.Theme().Size(theme.SizeNamePadding)
+		offsetY := f.list.GetScrollOffset()
+		tl = tl.Add(fyne.NewPos(0, offsetY))
+		br = br.Add(fyne.NewPos(0, offsetY))
+
 		width := f.list.Size().Width
 		height := itemSize.Height
+		stepY := height + pad
 
 		for i := 0; i < len(f.filtered); i++ {
-			y1 := float32(i) * height
+			y1 := float32(i) * stepY
 			y2 := y1 + height
 
 			// In list view, width is full width
@@ -631,7 +647,9 @@ func (f *fileList) onSelectionChange(tl, br fyne.Position) {
 
 func (f *fileList) onSelectionEnd() {
 	f.lastDragSelection = nil
+	f.dragSelecting = false
 	f.lastDragTime = time.Now()
+	f.overlay.setDebugRects(nil)
 }
 
 func sameSelection(a, b []int) bool {
