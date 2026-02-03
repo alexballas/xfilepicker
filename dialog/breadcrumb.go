@@ -23,6 +23,9 @@ func newBreadcrumb(p FilePicker) *breadcrumb {
 }
 
 func (b *breadcrumb) update(dir fyne.ListableURI) {
+	if b == nil || b.content == nil {
+		return
+	}
 	b.content.Objects = nil
 	current := dir
 
