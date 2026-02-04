@@ -116,6 +116,18 @@ func (f *fileList) setZoom(zoom float32) {
 	}
 	f.zoom = zoom
 	f.refresh()
+
+	// When item sizes change while scrolled, some internal scrollers can end up with an out-of-range offset
+	// (especially after a large zoom delta). Re-apply the current offset to force clamping and avoid
+	// rendering an empty viewport.
+	if f.view == GridView && f.grid != nil {
+		// Force column count recalculation for the new item width.
+		f.grid.Resize(f.grid.Size())
+		f.grid.ScrollToOffset(f.grid.GetScrollOffset())
+	} else if f.view == ListView && f.list != nil {
+		f.list.Resize(f.list.Size())
+		f.list.ScrollToOffset(f.list.GetScrollOffset())
+	}
 }
 
 func (f *fileList) setView(view ViewLayout) {
