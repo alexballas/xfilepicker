@@ -24,6 +24,7 @@ const (
 	viewLayoutKey      = "fyne:fileDialogViewLayout"
 	ffmpegPathKey      = "fyne:fileDialogFFmpegPath"
 	showHiddenKey      = "fyne:fileDialogShowHidden"
+	zoomLevelKey       = "fyne:fileDialogZoomLevel"
 )
 
 type favoriteItem struct {

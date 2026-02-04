@@ -31,6 +31,7 @@ func NewFileOpen(callback func(readers []fyne.URIReadCloser, err error), parent 
 		selected:      make(map[string]fyne.URI),
 		dir:           effectiveStartingDir(),
 		view:          defaultView, // Will be loaded from prefs
+		zoomLevel:     defaultZoomLevelIndex,
 		anchor:        -1,
 	}
 	d.loadPrefs()
@@ -57,6 +58,7 @@ type fileDialog struct {
 
 	view       ViewLayout
 	showHidden bool
+	zoomLevel  int
 
 	allowMultiple bool
 	anchor        int // Selection anchor for Shift-Select
@@ -68,6 +70,9 @@ type fileDialog struct {
 
 	originalOnTypedRune func(rune)
 	activeMenu          *widget.PopUp
+
+	zoomInBtn  *widget.Button
+	zoomOutBtn *widget.Button
 }
 
 func (f *fileDialog) Show() {
@@ -149,6 +154,50 @@ func (f *fileDialog) SetView(view ViewLayout) {
 
 func (f *fileDialog) GetView() ViewLayout {
 	return f.view
+}
+
+func (f *fileDialog) zoomScale() float32 {
+	f.zoomLevel = clampZoomLevelIndex(f.zoomLevel)
+	return zoomLevels[f.zoomLevel]
+}
+
+func (f *fileDialog) adjustZoom(steps int) {
+	if steps == 0 {
+		return
+	}
+	f.setZoomLevel(f.zoomLevel + steps)
+}
+
+func (f *fileDialog) setZoomLevel(level int) {
+	level = clampZoomLevelIndex(level)
+	if f.zoomLevel == level {
+		return
+	}
+
+	f.zoomLevel = level
+	fyne.CurrentApp().Preferences().SetInt(zoomLevelKey, f.zoomLevel)
+
+	if f.fileList != nil {
+		f.fileList.setZoom(f.zoomScale())
+	}
+	f.updateZoomButtons()
+}
+
+func (f *fileDialog) updateZoomButtons() {
+	if f.zoomOutBtn != nil {
+		if f.zoomLevel <= 0 {
+			f.zoomOutBtn.Disable()
+		} else {
+			f.zoomOutBtn.Enable()
+		}
+	}
+	if f.zoomInBtn != nil {
+		if f.zoomLevel >= len(zoomLevels)-1 {
+			f.zoomInBtn.Disable()
+		} else {
+			f.zoomInBtn.Enable()
+		}
+	}
 }
 
 func (f *fileDialog) IsMultiSelect() bool {
@@ -327,6 +376,7 @@ func (f *fileDialog) makeUI() fyne.CanvasObject {
 	f.breadcrumb = newBreadcrumb(f)
 
 	f.fileList.setView(f.view)
+	f.fileList.setZoom(f.zoomScale())
 
 	// Footer
 	f.fileName = widget.NewLabel("")
@@ -450,7 +500,15 @@ func (f *fileDialog) makeUI() fyne.CanvasObject {
 
 	// Group controls into two rows.
 	searchWrapper := container.NewGridWrap(fyne.NewSize(220, 36), f.searchEntry)
-	controlsRow := container.NewHBox(searchWrapper, sortSelect, newFolderBtn, viewToggle, optionsBtn)
+	f.zoomOutBtn = widget.NewButtonWithIcon("", theme.ZoomOutIcon(), func() {
+		f.adjustZoom(-1)
+	})
+	f.zoomInBtn = widget.NewButtonWithIcon("", theme.ZoomInIcon(), func() {
+		f.adjustZoom(1)
+	})
+	f.updateZoomButtons()
+
+	controlsRow := container.NewHBox(searchWrapper, sortSelect, newFolderBtn, f.zoomOutBtn, f.zoomInBtn, viewToggle, optionsBtn)
 
 	// Top Bar with Title and Controls
 	titleText := lang.L("Open File")
@@ -471,9 +529,13 @@ func (f *fileDialog) makeUI() fyne.CanvasObject {
 	// We keep the Padded container for consistent spacing
 	breadcrumbsArea := container.NewPadded(f.breadcrumb.scroll)
 
+	zoomOverlay := newZoomScrollOverlay(func(steps int) {
+		f.adjustZoom(steps)
+	})
+
 	split := container.NewHSplit(
 		container.NewPadded(f.sidebar.list),
-		container.NewBorder(breadcrumbsArea, nil, nil, nil, f.fileList.content),
+		container.NewBorder(breadcrumbsArea, nil, nil, nil, container.NewStack(f.fileList.content, zoomOverlay)),
 	)
 	split.SetOffset(0.25)
 
@@ -575,6 +637,8 @@ func (f *fileDialog) loadPrefs() {
 		view = GridView
 	}
 	f.view = view
+
+	f.zoomLevel = clampZoomLevelIndex(fyne.CurrentApp().Preferences().Int(zoomLevelKey))
 }
 
 // Helpers

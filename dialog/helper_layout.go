@@ -6,20 +6,26 @@ import (
 )
 
 func calculateItemSize(view ViewLayout) fyne.Size {
+	return calculateItemSizeWithZoom(view, 1.0)
+}
+
+func calculateItemSizeWithZoom(view ViewLayout, zoom float32) fyne.Size {
 	// Standard Text Height Measurement
 	// We use "A" as a representative character for line height
 	s, _ := fyne.CurrentApp().Driver().RenderedTextSize("A", theme.TextSize(), fyne.TextStyle{}, nil)
 	lineHeight := s.Height
 
 	if view == GridView {
+		iconSize := float32(fileIconSize) * zoom
+		cellWidth := float32(fileIconCellWidth) * zoom
 		// Grid View: Fixed Cell Width, Height based on Icon + 3.5 lines of text + padding
 		// Note: We use 3.0 padding to match legacy renderer logic, ensuring loose fit
-		return fyne.NewSize(fileIconCellWidth, fileIconSize+lineHeight*3.5+theme.Padding()*3.0)
+		return fyne.NewSize(cellWidth, iconSize+lineHeight*3.5+theme.Padding()*3.0)
 	}
 
 	// List View:
 	// Height: Icon or Text Height + Padding
-	iconSize := fileInlineIconSize
+	iconSize := float32(fileInlineIconSize) * zoom
 	textMinHeight := lineHeight
 	// Height is Max(icon, text) + inner padding?
 	// Renderer min sizes usually include padding.

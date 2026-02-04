@@ -22,6 +22,7 @@ type fileList struct {
 
 	content *container.Scroll
 	view    ViewLayout
+	zoom    float32
 
 	files        []fyne.URI
 	filtered     []fyne.URI
@@ -64,13 +65,14 @@ func newFileList(p FilePicker) *fileList {
 	f := &fileList{
 		picker:    p,
 		sortOrder: SortNameAsc,
+		zoom:      1.0,
 	}
 
 	f.overlay = newSelectionOverlay(nil, f.onSelectionDrag, f.onSelectionEnd)
 
 	f.grid = widget.NewGridWrap(
 		func() int { return len(f.filtered) },
-		func() fyne.CanvasObject { return newFileItem(f.picker) },
+		func() fyne.CanvasObject { return newFileItem(f.picker, f.getZoom) },
 		func(id widget.GridWrapItemID, o fyne.CanvasObject) {
 			item := o.(*fileItem)
 			item.id = int(id)
@@ -83,7 +85,7 @@ func newFileList(p FilePicker) *fileList {
 
 	f.list = widget.NewList(
 		func() int { return len(f.filtered) },
-		func() fyne.CanvasObject { return newFileItem(f.picker) },
+		func() fyne.CanvasObject { return newFileItem(f.picker, f.getZoom) },
 		func(id widget.ListItemID, o fyne.CanvasObject) {
 			item := o.(*fileItem)
 			item.id = id
@@ -96,6 +98,24 @@ func newFileList(p FilePicker) *fileList {
 
 	f.content = container.NewScroll(nil)
 	return f
+}
+
+func (f *fileList) getZoom() float32 {
+	if f.zoom <= 0 {
+		return 1.0
+	}
+	return f.zoom
+}
+
+func (f *fileList) setZoom(zoom float32) {
+	if zoom <= 0 {
+		zoom = 1.0
+	}
+	if f.zoom == zoom {
+		return
+	}
+	f.zoom = zoom
+	f.refresh()
 }
 
 func (f *fileList) setView(view ViewLayout) {
@@ -220,6 +240,7 @@ func isPadded(o fyne.CanvasObject, inner fyne.CanvasObject) bool {
 type fileItem struct {
 	widget.BaseWidget
 	picker FilePicker
+	zoom   func() float32
 	id     int
 	uri    fyne.URI
 
@@ -231,13 +252,15 @@ type fileItem struct {
 
 	currentPath string
 	currentView ViewLayout
+	currentZoom float32
 	lastClick   time.Time
 	loadTimer   *time.Timer
 }
 
-func newFileItem(p FilePicker) *fileItem {
+func newFileItem(p FilePicker, zoom func() float32) *fileItem {
 	item := &fileItem{
 		picker:     p,
+		zoom:       zoom,
 		icon:       widget.NewFileIcon(nil),
 		customIcon: widget.NewIcon(nil),
 		thumbnail:  canvas.NewImageFromImage(nil),
@@ -258,16 +281,29 @@ func (i *fileItem) CreateRenderer() fyne.WidgetRenderer {
 	return &fileItemRenderer{item: i}
 }
 
+func (i *fileItem) zoomScale() float32 {
+	if i.zoom == nil {
+		return 1.0
+	}
+	z := i.zoom()
+	if z <= 0 {
+		return 1.0
+	}
+	return z
+}
+
 func (i *fileItem) setURI(u fyne.URI, view ViewLayout) {
 	i.uri = u
 	i.icon.SetURI(u)
 	name := u.Name()
 
-	if i.currentPath == u.Path() && i.currentView == view {
+	zoom := i.zoomScale()
+	if i.currentPath == u.Path() && i.currentView == view && i.currentZoom == zoom {
 		return
 	}
 	i.currentPath = u.Path()
 	i.currentView = view
+	i.currentZoom = zoom
 
 	if view == GridView {
 		i.label.Alignment = fyne.TextAlignCenter
@@ -276,7 +312,7 @@ func (i *fileItem) setURI(u fyne.URI, view ViewLayout) {
 
 		// Max 3 lines. Strict measurement to ensure it fits.
 		// Use a safeLimit as heuristic to avoid the edge case where wrapping creates a 4th line.
-		safeLimit := float32(2.4) * fileIconCellWidth
+		safeLimit := float32(2.4) * (float32(fileIconCellWidth) * zoom)
 
 		textSize := theme.TextSize()
 		textStyle := i.label.TextStyle
@@ -484,9 +520,10 @@ func (r *fileItemRenderer) Layout(size fyne.Size) {
 	r.item.bg.Resize(size)
 
 	view := r.item.picker.GetView()
+	zoom := r.item.zoomScale()
 
 	if view == GridView {
-		iconSize := fyne.NewSquareSize(fileIconSize)
+		iconSize := fyne.NewSquareSize(float32(fileIconSize) * zoom)
 		r.item.icon.Resize(iconSize)
 		r.item.icon.Move(fyne.NewPos((size.Width-iconSize.Width)/2, theme.Padding()))
 
@@ -507,7 +544,7 @@ func (r *fileItemRenderer) Layout(size fyne.Size) {
 		r.item.label.Move(fyne.NewPos(0, iconSize.Height+theme.Padding()*1.5))
 
 	} else {
-		iconSize := fyne.NewSquareSize(fileInlineIconSize)
+		iconSize := fyne.NewSquareSize(float32(fileInlineIconSize) * zoom)
 		r.item.icon.Resize(iconSize)
 		r.item.icon.Move(fyne.NewPos(theme.Padding(), (size.Height-iconSize.Height)/2))
 
@@ -523,7 +560,7 @@ func (r *fileItemRenderer) Layout(size fyne.Size) {
 
 func (r *fileItemRenderer) MinSize() fyne.Size {
 	view := r.item.picker.GetView()
-	return calculateItemSize(view)
+	return calculateItemSizeWithZoom(view, r.item.zoomScale())
 }
 
 func (r *fileItemRenderer) Refresh() {
@@ -545,7 +582,7 @@ func (r *fileItemRenderer) Destroy() {
 }
 
 func (f *fileList) getItemSize() fyne.Size {
-	return calculateItemSize(f.view)
+	return calculateItemSizeWithZoom(f.view, f.getZoom())
 }
 
 func (f *fileList) onSelectionDrag(start, cur fyne.Position) {
