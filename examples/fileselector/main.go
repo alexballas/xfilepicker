@@ -19,8 +19,7 @@ func main() {
 
 	// Example: Set custom FFmpeg path programmatically
 	// This will also be saved to Fyne preferences automatically
-	dialog.GetThumbnailManager().SetFFmpegPath("ffmpeg")
-
+	dialog.SetFFmpegPath("ffmpeg")
 	label := widget.NewLabel("No files selected")
 
 	btnMulti := widget.NewButton("Open Multiple Files", func() {

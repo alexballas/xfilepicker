@@ -46,12 +46,16 @@ var (
 	once     sync.Once
 )
 
+func SetFFmpegPath(path string) {
+	fyne.CurrentApp().Preferences().SetString(ffmpegPathKey, path)
+	if instance != nil {
+		instance.ffmpegPath = path
+	}
+}
+
 func GetThumbnailManager() *ThumbnailManager {
 	once.Do(func() {
-		ffmpeg := "ffmpeg"
-		if pref := fyne.CurrentApp().Preferences().String(ffmpegPathKey); pref != "" {
-			ffmpeg = pref
-		}
+		ffmpeg := fyne.CurrentApp().Preferences().String(ffmpegPathKey)
 		instance = &ThumbnailManager{
 			requests:   make([]thumbnailRequest, 0, 100),
 			ffmpegPath: ffmpeg,
@@ -71,11 +75,6 @@ func GetThumbnailManager() *ThumbnailManager {
 		}
 	})
 	return instance
-}
-
-func (m *ThumbnailManager) SetFFmpegPath(path string) {
-	m.ffmpegPath = path
-	fyne.CurrentApp().Preferences().SetString(ffmpegPathKey, path)
 }
 
 // LoadMemoryOnly retrieves a thumbnail from memory cache only.

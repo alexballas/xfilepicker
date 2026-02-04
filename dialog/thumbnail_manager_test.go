@@ -30,9 +30,9 @@ func TestThumbnailManager_Video_AspectRatio(t *testing.T) {
 		t.Skipf("failed to create video: %v, output: %s", err, out)
 	}
 
+	SetFFmpegPath("ffmpeg")
 	// 3. Initialize Manager
 	manager := GetThumbnailManager()
-	manager.SetFFmpegPath("ffmpeg")
 
 	// 4. Request thumbnail
 	var wg sync.WaitGroup
