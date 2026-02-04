@@ -114,20 +114,18 @@ func (f *fileList) setZoom(zoom float32) {
 	if f.zoom == zoom {
 		return
 	}
+
+	// Zoom should be context-aware: keep the items currently in view centered.
+	// We anchor on the item ID at the viewport center (grid uses center column),
+	// then scroll so that same item remains at the viewport center after zoom.
+	oldZoom := f.getZoom()
+	view := f.view
+	anchorID := f.centerAnchorID(view, oldZoom)
+
 	f.zoom = zoom
 	f.refresh()
 
-	// When item sizes change while scrolled, some internal scrollers can end up with an out-of-range offset
-	// (especially after a large zoom delta). Re-apply the current offset to force clamping and avoid
-	// rendering an empty viewport.
-	if f.view == GridView && f.grid != nil {
-		// Force column count recalculation for the new item width.
-		f.grid.Resize(f.grid.Size())
-		f.grid.ScrollToOffset(f.grid.GetScrollOffset())
-	} else if f.view == ListView && f.list != nil {
-		f.list.Resize(f.list.Size())
-		f.list.ScrollToOffset(f.list.GetScrollOffset())
-	}
+	f.scrollCenterOnID(view, anchorID, zoom)
 }
 
 func (f *fileList) setView(view ViewLayout) {
@@ -595,6 +593,144 @@ func (r *fileItemRenderer) Destroy() {
 
 func (f *fileList) getItemSize() fyne.Size {
 	return calculateItemSizeWithZoom(f.view, f.getZoom())
+}
+
+func (f *fileList) centerAnchorID(view ViewLayout, zoom float32) int {
+	if len(f.filtered) == 0 {
+		return 0
+	}
+
+	offset := f.currentScrollOffset()
+
+	switch view {
+	case GridView:
+		if f.grid == nil {
+			return 0
+		}
+		viewport := f.grid.Size()
+		pad := f.grid.Theme().Size(theme.SizeNamePadding)
+		itemSize := calculateItemSizeWithZoom(GridView, zoom)
+
+		cols := gridColumnCount(viewport.Width, itemSize.Width, pad)
+		stepX := itemSize.Width + pad
+		stepY := itemSize.Height + pad
+
+		centerX := viewport.Width / 2
+		centerY := offset + viewport.Height/2
+
+		row := int(centerY / stepY)
+		col := int(centerX / stepX)
+		id := row*cols + col
+		return clampIndex(id, len(f.filtered))
+	default:
+		if f.list == nil {
+			return 0
+		}
+		viewport := f.list.Size()
+		pad := f.list.Theme().Size(theme.SizeNamePadding)
+		itemSize := calculateItemSizeWithZoom(ListView, zoom)
+
+		stepY := itemSize.Height + pad
+		centerY := offset + viewport.Height/2
+
+		id := int(centerY / stepY)
+		return clampIndex(id, len(f.filtered))
+	}
+}
+
+func (f *fileList) scrollCenterOnID(view ViewLayout, id int, zoom float32) {
+	if len(f.filtered) == 0 {
+		return
+	}
+	id = clampIndex(id, len(f.filtered))
+
+	switch view {
+	case GridView:
+		if f.grid == nil {
+			return
+		}
+
+		viewport := f.grid.Size()
+		pad := f.grid.Theme().Size(theme.SizeNamePadding)
+		itemSize := calculateItemSizeWithZoom(GridView, zoom)
+
+		// Force column count recalculation for the new item width.
+		f.grid.Resize(viewport)
+
+		cols := gridColumnCount(viewport.Width, itemSize.Width, pad)
+		if cols < 1 {
+			cols = 1
+		}
+		stepY := itemSize.Height + pad
+		rows := (len(f.filtered) + cols - 1) / cols
+		contentHeight := float32(rows)*stepY - pad
+
+		row := id / cols
+		desiredCenterY := float32(row)*stepY + itemSize.Height/2
+		targetOffset := desiredCenterY - viewport.Height/2
+		targetOffset = clampOffset(targetOffset, contentHeight-viewport.Height)
+
+		f.grid.ScrollToOffset(targetOffset)
+	default:
+		if f.list == nil {
+			return
+		}
+
+		viewport := f.list.Size()
+		pad := f.list.Theme().Size(theme.SizeNamePadding)
+		itemSize := calculateItemSizeWithZoom(ListView, zoom)
+
+		f.list.Resize(viewport)
+
+		stepY := itemSize.Height + pad
+		contentHeight := float32(len(f.filtered))*stepY - pad
+
+		desiredCenterY := float32(id)*stepY + itemSize.Height/2
+		targetOffset := desiredCenterY - viewport.Height/2
+		targetOffset = clampOffset(targetOffset, contentHeight-viewport.Height)
+
+		f.list.ScrollToOffset(targetOffset)
+	}
+}
+
+func clampIndex(i int, length int) int {
+	if length <= 0 {
+		return 0
+	}
+	if i < 0 {
+		return 0
+	}
+	if i >= length {
+		return length - 1
+	}
+	return i
+}
+
+func clampOffset(offset, max float32) float32 {
+	if offset < 0 {
+		return 0
+	}
+	if max < 0 {
+		return 0
+	}
+	if offset > max {
+		return max
+	}
+	return offset
+}
+
+func gridColumnCount(width, itemWidth, padding float32) int {
+	if itemWidth <= 0 {
+		return 1
+	}
+	cols := 1
+	if width > itemWidth {
+		cols = int((width + padding) / (itemWidth + padding))
+		if cols < 1 {
+			cols = 1
+		}
+	}
+	return cols
 }
 
 func (f *fileList) onSelectionDrag(start, cur fyne.Position) {
