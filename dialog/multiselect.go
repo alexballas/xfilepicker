@@ -69,6 +69,7 @@ type fileDialog struct {
 	searchEntry *widget.Entry
 
 	originalOnTypedRune func(rune)
+	originalOnTypedKey  func(*fyne.KeyEvent)
 	activeMenu          *widget.PopUp
 
 	zoomInBtn  *widget.Button
@@ -90,6 +91,8 @@ func (f *fileDialog) Show() {
 	// NOTE: We register hooks AFTER Show() to capture any hooks that ModalPopUp might set (e.g. for closing on Escape)
 	f.originalOnTypedRune = f.parent.Canvas().OnTypedRune()
 	f.parent.Canvas().SetOnTypedRune(f.typedRuneHook)
+	f.originalOnTypedKey = f.parent.Canvas().OnTypedKey()
+	f.parent.Canvas().SetOnTypedKey(f.typedKeyHook)
 	f.refreshDir(f.dir)
 }
 
@@ -97,6 +100,7 @@ func (f *fileDialog) Hide() {
 	// Restore original handler
 	if f.parent != nil && f.parent.Canvas() != nil {
 		f.parent.Canvas().SetOnTypedRune(f.originalOnTypedRune)
+		f.parent.Canvas().SetOnTypedKey(f.originalOnTypedKey)
 	}
 
 	if f.win != nil {
@@ -365,6 +369,37 @@ func (f *fileDialog) typedRuneHook(r rune) {
 	f.searchEntry.SetText(f.searchEntry.Text + string(r))
 	f.searchEntry.CursorColumn = len(f.searchEntry.Text)
 	f.searchEntry.Refresh()
+}
+
+func (f *fileDialog) typedKeyHook(ev *fyne.KeyEvent) {
+	if f.originalOnTypedKey != nil {
+		f.originalOnTypedKey(ev)
+	}
+	if f.win == nil || ev == nil {
+		return
+	}
+
+	if ev.Name != fyne.KeyReturn && ev.Name != fyne.KeyEnter {
+		return
+	}
+
+	// Only trigger Open when focus is on the file list (or nothing focused).
+	// We must not interfere with dialogs/forms (e.g. New Folder) or text inputs.
+	focused := f.parent.Canvas().Focused()
+	allowed := focused == nil
+	if !allowed && f.fileList != nil {
+		if focused == f.fileList.list || focused == f.fileList.grid {
+			allowed = true
+		}
+	}
+	if !allowed {
+		return
+	}
+
+	if f.open == nil || f.open.Disabled() || len(f.selected) == 0 {
+		return
+	}
+	f.open.OnTapped()
 }
 
 // Internal Logic
