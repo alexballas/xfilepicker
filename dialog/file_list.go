@@ -563,6 +563,13 @@ func formatGridFileName(name string, width float32, style fyne.TextStyle) string
 		size, _ := fyne.CurrentApp().Driver().RenderedTextSize(s, textSize, style, nil)
 		return size.Width
 	}
+	return formatGridFileNameWithMeasure(name, width, measure)
+}
+
+func formatGridFileNameWithMeasure(name string, width float32, measure func(string) float32) string {
+	if name == "" || width <= 0 {
+		return name
+	}
 
 	// If the full name fits on one line, keep it as-is.
 	if measure(name) <= width {
@@ -581,8 +588,9 @@ func formatGridFileName(name string, width float32, style fyne.TextStyle) string
 		baseMaxLines = 2
 	)
 
-	// Always place extension on its own final line whenever we need multiple lines.
-	// This avoids ".m" / ".mp" partial extensions when the grid tightens (e.g. after a column change).
+	// Always add the extension as the final line. When base text must be truncated,
+	// show the truncation marker together with the extension (e.g. "...mp4") so it
+	// can't be visually separated/hidden during tight resizes.
 	extLine := ext
 	if measure(extLine) > width {
 		extLine = fitSuffixByWidth(extLine, width, measure)
@@ -600,31 +608,23 @@ func formatGridFileName(name string, width float32, style fyne.TextStyle) string
 		remaining = strings.TrimPrefix(remaining, head)
 	}
 
-	// If we still have remaining base text, add an ellipsis to the last base line.
+	// If we still have remaining base text, mark truncation on the extension line.
 	if remaining != "" {
 		dots := ".."
 		dotsW := measure(dots)
-		if dotsW >= width {
-			// Extremely narrow: just show dots above the extension.
-			if len(lines) == 0 {
-				lines = append(lines, dots)
-			} else {
-				lines[len(lines)-1] = dots
-			}
-		} else {
+		switch {
+		case dotsW >= width:
+			extLine = dots
+		default:
 			avail := width - dotsW
-			last := fitPrefixByWidth(remaining, avail, measure)
-			if len(lines) == 0 {
-				lines = append(lines, last+dots)
-			} else {
-				lines[len(lines)-1] = last + dots
+			extSuffix := ext
+			if measure(extSuffix) > avail {
+				extSuffix = fitSuffixByWidth(extSuffix, avail, measure)
 			}
+			extLine = dots + extSuffix
 		}
 	}
 
-	if len(lines) == 0 {
-		lines = append(lines, "..")
-	}
 	lines = append(lines, extLine)
 	return strings.Join(lines, "\n")
 }

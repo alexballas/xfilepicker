@@ -3,7 +3,9 @@ package dialog
 import (
 	"fmt"
 	"path/filepath"
+	"strings"
 	"testing"
+	"unicode/utf8"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/storage"
@@ -208,5 +210,30 @@ func TestFileList_GridView_StretchesCellsToFillWidth(t *testing.T) {
 			t.Fatalf("unexpected column increase while shrinking at width %.2f: %d -> %d", width, prevCols, cols)
 		}
 		prevCols = cols
+	}
+}
+
+func TestFormatGridFileNameWithMeasure_TruncationKeepsDotsBeforeExtension(t *testing.T) {
+	measure := func(s string) float32 { return float32(utf8.RuneCountInString(s)) }
+
+	got := formatGridFileNameWithMeasure("abcdefghijklmnopqrstuvwxyz.txt", 6, measure)
+	want := "abcdef\nghijkl\n...txt"
+	if got != want {
+		t.Fatalf("unexpected formatting:\n got: %q\nwant: %q", got, want)
+	}
+
+	// When the base name is truncated, we always show the dots marker somewhere above the extension.
+	if !strings.Contains(got, "...") {
+		t.Fatalf("expected truncation marker before extension, got %q", got)
+	}
+}
+
+func TestFormatGridFileNameWithMeasure_NoExtensionProtectionForDotfiles(t *testing.T) {
+	measure := func(s string) float32 { return float32(utf8.RuneCountInString(s)) }
+
+	// filepath.Ext(".bashrc") == "" so we should not split/protect.
+	name := ".bashrc"
+	if got := formatGridFileNameWithMeasure(name, 3, measure); got != name {
+		t.Fatalf("expected dotfile name unchanged, got %q", got)
 	}
 }
