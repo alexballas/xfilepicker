@@ -294,6 +294,7 @@ func (m *ThumbnailManager) generateVideoThumbnail(path string) (image.Image, err
 	// Note: Putting -ss before -i is faster (input seeking) but less accurate.
 	// For thumbnails, input seeking is usually fine and much faster.
 	cmd := exec.Command(m.ffmpegPath, "-ss", seekStr, "-i", path, "-vframes", "1", "-f", "image2", "-strict", "unofficial", "-")
+	applyHiddenWindow(cmd)
 	var buf bytes.Buffer
 	cmd.Stdout = &buf
 	if err := cmd.Run(); err != nil {
@@ -307,6 +308,7 @@ func (m *ThumbnailManager) generateVideoThumbnail(path string) (image.Image, err
 func (m *ThumbnailManager) getVideoDuration(path string) (time.Duration, error) {
 	// ffmpeg -i <file> 2>&1 | grep "Duration"
 	cmd := exec.Command(m.ffmpegPath, "-i", path)
+	applyHiddenWindow(cmd)
 	// ffmpeg prints to stderr
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
