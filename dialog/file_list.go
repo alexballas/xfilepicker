@@ -127,9 +127,9 @@ func (f *fileList) onResize() {
 
 	f.recomputeGridCols(width, f.getZoom())
 	f.lastGridViewportWidth = width
-	f.grid.Refresh()
 
-	// GridWrap caches its column count; force a recalculation after item MinSize changes.
+	// GridWrap caches its column count and item MinSizes (which we make width-dependent
+	// to stretch cells and avoid dead space). Force a recalculation on resize.
 	f.grid.Resize(f.grid.Size())
 }
 
@@ -297,9 +297,10 @@ type fileItem struct {
 	label      *widget.Label
 	bg         *canvas.Rectangle
 
-	rawName        string
-	gridLabelWidth float32
-	gridTextSize   float32
+	rawName         string
+	gridLabelWidth  float32
+	gridTextSize    float32
+	gridLabelQueued bool
 
 	currentPath string
 	currentView ViewLayout
@@ -345,16 +346,25 @@ func (i *fileItem) zoomScale() float32 {
 }
 
 func (i *fileItem) setURI(u fyne.URI, view ViewLayout) {
+	zoom := i.zoomScale()
+	path := ""
+	if u != nil {
+		path = u.Path()
+	}
+
+	// Fast path: avoid re-doing expensive work (icon/thumbnail resets, timers) during resize/layout churn.
+	// Grid/list virtualization can call UpdateItem repeatedly even when the underlying URI hasn't changed.
+	if i.currentPath == path && i.currentView == view && i.currentZoom == zoom {
+		i.uri = u
+		return
+	}
+
 	i.uri = u
 	i.icon.SetURI(u)
 	i.rawName = u.Name()
 	name := i.rawName
 
-	zoom := i.zoomScale()
-	if i.currentPath == u.Path() && i.currentView == view && i.currentZoom == zoom {
-		return
-	}
-	i.currentPath = u.Path()
+	i.currentPath = path
 	i.currentView = view
 	i.currentZoom = zoom
 
@@ -383,7 +393,9 @@ func (i *fileItem) setURI(u fyne.URI, view ViewLayout) {
 	i.customIcon.Hide()
 	i.thumbnail.Hide()
 	i.thumbnail.Image = nil
-	i.thumbnail.Refresh()
+	i.thumbnail.File = ""
+	i.thumbnail.Resource = nil
+	i.thumbnail.FillMode = canvas.ImageFillContain
 
 	// Check for fancy folder details
 	if isDir, _ := storage.CanList(u); isDir {
@@ -413,6 +425,9 @@ func (i *fileItem) setURI(u fyne.URI, view ViewLayout) {
 
 		// Try instant memory hit
 		if img := GetThumbnailManager().LoadMemoryOnly(u.Path()); img != nil {
+			i.thumbnail.File = ""
+			i.thumbnail.Resource = nil
+			i.thumbnail.FillMode = canvas.ImageFillContain
 			i.thumbnail.Image = img.Image
 			i.thumbnail.Refresh()
 			i.icon.Hide()
@@ -428,6 +443,9 @@ func (i *fileItem) setURI(u fyne.URI, view ViewLayout) {
 						return
 					}
 					if img != nil {
+						i.thumbnail.File = ""
+						i.thumbnail.Resource = nil
+						i.thumbnail.FillMode = canvas.ImageFillContain
 						i.thumbnail.Image = img.Image
 						i.thumbnail.Refresh()
 						i.icon.Hide()
@@ -742,7 +760,13 @@ func (i *fileItem) ensureGridLabel(width float32) {
 	}
 
 	// Defer updates from layout callbacks to avoid re-entrant layout panics.
+	if i.gridLabelQueued {
+		return
+	}
+	i.gridLabelQueued = true
 	fyne.Do(func() {
+		defer func() { i.gridLabelQueued = false }()
+
 		if i == nil || i.label == nil || i.currentView != GridView || i.rawName == "" {
 			return
 		}

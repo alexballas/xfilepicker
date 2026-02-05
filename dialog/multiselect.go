@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/container"
@@ -589,19 +590,63 @@ func (f *fileDialog) makeUI() fyne.CanvasObject {
 type resizeLayout struct {
 	internal fyne.Layout
 	onResize func()
+
+	lastSize  fyne.Size
+	lastFired time.Time
+	timer     *time.Timer
 }
 
 func (r *resizeLayout) Layout(objects []fyne.CanvasObject, size fyne.Size) {
 	r.internal.Layout(objects, size)
 	if r.onResize != nil {
-		// Defer the resize callback to avoid modifying the UI during layout
-		// which can cause panics in Fyne driver.
-		fyne.Do(r.onResize)
+		// Only react to real size changes (layouts can run for other reasons).
+		if abs32(size.Width-r.lastSize.Width) < 0.5 && abs32(size.Height-r.lastSize.Height) < 0.5 {
+			return
+		}
+		r.lastSize = size
+		r.scheduleResize()
 	}
 }
 
 func (r *resizeLayout) MinSize(objects []fyne.CanvasObject) fyne.Size {
 	return r.internal.MinSize(objects)
+}
+
+func (r *resizeLayout) scheduleResize() {
+	// Defer the resize callback to avoid modifying the UI during layout
+	// which can cause panics in Fyne driver. Coalesce bursts during window resize.
+	const minInterval = 60 * time.Millisecond
+
+	if r.onResize == nil {
+		return
+	}
+
+	now := time.Now()
+	elapsed := now.Sub(r.lastFired)
+	if elapsed >= minInterval {
+		r.lastFired = now
+		fyne.Do(r.onResize)
+		return
+	}
+
+	delay := minInterval - elapsed
+	if delay < 0 {
+		delay = 0
+	}
+
+	if r.timer == nil {
+		r.timer = time.AfterFunc(delay, func() {
+			fyne.Do(func() {
+				r.timer = nil
+				r.lastFired = time.Now()
+				if r.onResize != nil {
+					r.onResize()
+				}
+			})
+		})
+		return
+	}
+	r.timer.Reset(delay)
 }
 
 func (f *fileDialog) refreshDir(dir fyne.ListableURI) {
