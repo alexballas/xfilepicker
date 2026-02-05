@@ -297,6 +297,10 @@ type fileItem struct {
 	label      *widget.Label
 	bg         *canvas.Rectangle
 
+	rawName        string
+	gridLabelWidth float32
+	gridTextSize   float32
+
 	currentPath string
 	currentView ViewLayout
 	currentZoom float32
@@ -343,7 +347,8 @@ func (i *fileItem) zoomScale() float32 {
 func (i *fileItem) setURI(u fyne.URI, view ViewLayout) {
 	i.uri = u
 	i.icon.SetURI(u)
-	name := u.Name()
+	i.rawName = u.Name()
+	name := i.rawName
 
 	zoom := i.zoomScale()
 	if i.currentPath == u.Path() && i.currentView == view && i.currentZoom == zoom {
@@ -355,57 +360,17 @@ func (i *fileItem) setURI(u fyne.URI, view ViewLayout) {
 
 	if view == GridView {
 		i.label.Alignment = fyne.TextAlignCenter
-		i.label.Wrapping = fyne.TextWrapBreak
+		// We manually wrap with '\n' so we can keep file extensions intact.
+		i.label.Wrapping = fyne.TextWrapOff
 		i.label.Truncation = fyne.TextTruncateClip
 
-		// Max 3 lines. Strict measurement to ensure it fits.
-		// Use a safeLimit as heuristic to avoid the edge case where wrapping creates a 4th line.
 		cellWidth := float32(fileIconCellWidth) * zoom
 		if i.itemSz != nil {
 			if s := i.itemSz(GridView, zoom); s.Width > 0 {
 				cellWidth = s.Width
 			}
 		}
-		safeLimit := float32(2.4) * cellWidth
-
-		textSize := theme.TextSize()
-		textStyle := i.label.TextStyle
-		measure := func(s string) float32 {
-			size, _ := fyne.CurrentApp().Driver().RenderedTextSize(s, textSize, textStyle, nil)
-			return size.Width
-		}
-
-		if measure(name) > safeLimit {
-			ext := filepath.Ext(name)
-			dots := ".."
-
-			dotsWidth := measure(dots)
-			extWidth := measure(ext)
-
-			// Available width for the start of the filename
-			targetHeadWidth := safeLimit - dotsWidth - extWidth
-
-			if targetHeadWidth > 0 {
-				base := name[:len(name)-len(ext)]
-
-				// Binary search for the maximum length of base that fits
-				low, high := 0, len(base)
-				best := 0
-				for low <= high {
-					mid := (low + high) / 2
-					if measure(base[:mid]) <= targetHeadWidth {
-						best = mid
-						low = mid + 1
-					} else {
-						high = mid - 1
-					}
-				}
-				name = base[:best] + dots + ext
-			} else {
-				// Fallback if extension is extremely long
-				name = dots + ext
-			}
-		}
+		name = formatGridFileName(name, cellWidth, i.label.TextStyle)
 	} else {
 		i.label.Alignment = fyne.TextAlignLeading
 		i.label.Wrapping = fyne.TextWrapOff
@@ -566,6 +531,153 @@ func (i *fileItem) SecondaryTapped(e *fyne.PointEvent) {
 	i.showContextMenu(e.Position)
 }
 
+func formatGridFileName(name string, width float32, style fyne.TextStyle) string {
+	if name == "" || width <= 0 {
+		return name
+	}
+
+	// Safety margin to avoid 1px clipping due to rounding differences between
+	// RenderedTextSize measurements and actual rendering.
+	width = max32(width-2.0, 0)
+
+	textSize := theme.TextSize()
+	measure := func(s string) float32 {
+		size, _ := fyne.CurrentApp().Driver().RenderedTextSize(s, textSize, style, nil)
+		return size.Width
+	}
+
+	// If the full name fits on one line, keep it as-is.
+	if measure(name) <= width {
+		return name
+	}
+
+	// Only "protect" extensions when there's a base name to show.
+	ext := filepath.Ext(name)
+	base := strings.TrimSuffix(name, ext)
+	if ext == "" || base == "" {
+		return name
+	}
+
+	const (
+		maxLines     = 3
+		baseMaxLines = 2
+	)
+
+	// Always place extension on its own final line whenever we need multiple lines.
+	// This avoids ".m" / ".mp" partial extensions when the grid tightens (e.g. after a column change).
+	extLine := ext
+	if measure(extLine) > width {
+		extLine = fitSuffixByWidth(extLine, width, measure)
+	}
+
+	lines := make([]string, 0, maxLines)
+	remaining := base
+
+	for len(lines) < baseMaxLines && remaining != "" {
+		head := fitPrefixByWidth(remaining, width, measure)
+		if head == "" {
+			break
+		}
+		lines = append(lines, head)
+		remaining = strings.TrimPrefix(remaining, head)
+	}
+
+	// If we still have remaining base text, add an ellipsis to the last base line.
+	if remaining != "" {
+		dots := ".."
+		dotsW := measure(dots)
+		if dotsW >= width {
+			// Extremely narrow: just show dots above the extension.
+			if len(lines) == 0 {
+				lines = append(lines, dots)
+			} else {
+				lines[len(lines)-1] = dots
+			}
+		} else {
+			avail := width - dotsW
+			last := fitPrefixByWidth(remaining, avail, measure)
+			if len(lines) == 0 {
+				lines = append(lines, last+dots)
+			} else {
+				lines[len(lines)-1] = last + dots
+			}
+		}
+	}
+
+	if len(lines) == 0 {
+		lines = append(lines, "..")
+	}
+	lines = append(lines, extLine)
+	return strings.Join(lines, "\n")
+}
+
+func appendOrReplaceLastLine(lines []string, last string, maxLines int) []string {
+	if len(lines) < maxLines {
+		return append(lines, last)
+	}
+	if len(lines) == 0 {
+		return []string{last}
+	}
+	lines[len(lines)-1] = last
+	return lines
+}
+
+func fitPrefixByWidth(s string, width float32, measure func(string) float32) string {
+	if s == "" || width <= 0 {
+		return ""
+	}
+	if measure(s) <= width {
+		return s
+	}
+
+	runes := []rune(s)
+	low, high := 0, len(runes)
+	best := 0
+	for low <= high {
+		mid := (low + high) / 2
+		if mid == 0 {
+			low = 1
+			continue
+		}
+		if measure(string(runes[:mid])) <= width {
+			best = mid
+			low = mid + 1
+		} else {
+			high = mid - 1
+		}
+	}
+	if best == 0 {
+		return ""
+	}
+	return string(runes[:best])
+}
+
+func fitSuffixByWidth(s string, width float32, measure func(string) float32) string {
+	if s == "" || width <= 0 {
+		return ""
+	}
+	if measure(s) <= width {
+		return s
+	}
+
+	runes := []rune(s)
+	low, high := 0, len(runes)
+	bestStart := len(runes)
+	for low <= high {
+		mid := (low + high) / 2
+		if mid >= len(runes) {
+			break
+		}
+		if measure(string(runes[mid:])) <= width {
+			bestStart = mid
+			high = mid - 1
+		} else {
+			low = mid + 1
+		}
+	}
+	return string(runes[bestStart:])
+}
+
 type fileItemRenderer struct {
 	item *fileItem
 }
@@ -589,13 +701,20 @@ func (r *fileItemRenderer) Layout(size fyne.Size) {
 			r.item.thumbnail.Move(fyne.NewPos((size.Width-iconSize.Width)/2, theme.Padding()))
 		}
 
-		// Strictly cap height to exactly 3 lines of text
-		// Use the theme's text size and style to measure a single line
-		s, _ := fyne.CurrentApp().Driver().RenderedTextSize("A", theme.TextSize(), r.item.label.TextStyle, nil)
-		lineHeight := s.Height
-		textHeight := lineHeight * 4.0
-		r.item.label.Resize(fyne.NewSize(size.Width, textHeight))
-		r.item.label.Move(fyne.NewPos(0, iconSize.Height+theme.Padding()*1.5))
+		// Size the label using the available height so the last line (extension)
+		// never gets clipped due to rounding/padding differences.
+		labelY := iconSize.Height + theme.Padding()*2
+		labelH := size.Height - labelY - theme.Padding()
+		if labelH < 0 {
+			labelH = 0
+		}
+		r.item.label.Resize(fyne.NewSize(size.Width, labelH))
+		r.item.label.Move(fyne.NewPos(0, labelY))
+
+		// Recompute label text for the current width. This is important when the grid
+		// flexes item widths during resize (e.g. when a column is added/removed), so
+		// we don't end up with wrapped/clipped extensions.
+		r.item.ensureGridLabel(size.Width)
 
 	} else {
 		iconSize := fyne.NewSquareSize(float32(fileInlineIconSize) * zoom)
@@ -610,6 +729,39 @@ func (r *fileItemRenderer) Layout(size fyne.Size) {
 		r.item.label.Move(fyne.NewPos(iconSize.Width+theme.Padding()*2, 0))
 
 	}
+}
+
+func (i *fileItem) ensureGridLabel(width float32) {
+	if i == nil || i.label == nil || i.currentView != GridView || i.rawName == "" || width <= 0 {
+		return
+	}
+
+	// Avoid churn during continuous resize.
+	if abs32(width-i.gridLabelWidth) < 1.0 && i.gridTextSize == theme.TextSize() {
+		return
+	}
+
+	// Defer updates from layout callbacks to avoid re-entrant layout panics.
+	fyne.Do(func() {
+		if i == nil || i.label == nil || i.currentView != GridView || i.rawName == "" {
+			return
+		}
+		curWidth := i.label.Size().Width
+		if curWidth <= 0 {
+			return
+		}
+		curTextSize := theme.TextSize()
+		if abs32(curWidth-i.gridLabelWidth) < 1.0 && i.gridTextSize == curTextSize {
+			return
+		}
+
+		newText := formatGridFileName(i.rawName, curWidth, i.label.TextStyle)
+		i.gridLabelWidth = curWidth
+		i.gridTextSize = curTextSize
+		if i.label.Text != newText {
+			i.label.SetText(newText)
+		}
+	})
 }
 
 func (r *fileItemRenderer) MinSize() fyne.Size {
