@@ -92,6 +92,7 @@ func newFileList(p FilePicker) *fileList {
 			}
 		},
 	)
+	f.grid.StretchItems = true
 
 	f.list = widget.NewList(
 		func() int { return len(f.filtered) },
@@ -125,7 +126,18 @@ func (f *fileList) onResize() {
 		return
 	}
 
-	f.recomputeGridCols(width, f.getZoom())
+	// Capture scroll position as a ratio of max scroll before layout changes.
+	// Using a ratio rather than an item ID works better when column count
+	// changes significantly (which alters row positions).
+	oldOffset := f.grid.GetScrollOffset()
+	oldMax := f.maxScrollOffset()
+	scrollRatio := float32(0)
+	if oldMax > 0 {
+		scrollRatio = oldOffset / oldMax
+	}
+
+	zoom := f.getZoom()
+	f.recomputeGridCols(width, zoom)
 	f.lastGridViewportWidth = width
 
 	// GridWrap caches its column count and item MinSizes (which we make width-dependent
@@ -133,6 +145,13 @@ func (f *fileList) onResize() {
 	// Refresh re-measures item MinSize (our items depend on viewport width); Resize clears its internal column cache.
 	f.grid.Refresh()
 	f.grid.Resize(f.grid.Size())
+
+	// Restore scroll position using the same ratio.
+	newMax := f.maxScrollOffset()
+	if newMax > 0 && scrollRatio > 0 {
+		targetOffset := scrollRatio * newMax
+		f.grid.ScrollToOffset(targetOffset)
+	}
 }
 
 func (f *fileList) getZoom() float32 {
@@ -796,9 +815,8 @@ func (i *fileItem) ensureGridLabel(width float32) {
 func (r *fileItemRenderer) MinSize() fyne.Size {
 	view := r.item.picker.GetView()
 	zoom := r.item.zoomScale()
-	if r.item.itemSz != nil {
-		return r.item.itemSz(view, zoom)
-	}
+	// Return stable base size. Fyne's GridWrap.StretchItems handles stretching
+	// at layout time to avoid feedback loops.
 	return calculateItemSizeWithZoom(view, zoom)
 }
 
@@ -828,36 +846,8 @@ func (f *fileList) itemSizeWithZoom(view ViewLayout, zoom float32) fyne.Size {
 	if view != GridView {
 		return calculateItemSizeWithZoom(view, zoom)
 	}
-	base := calculateItemSizeWithZoom(GridView, zoom)
-	if f == nil || f.grid == nil {
-		return base
-	}
-
-	viewportWidth := f.gridViewportWidthForLayout()
-	if viewportWidth <= 0 {
-		return base
-	}
-
-	pad := f.grid.Theme().Size(theme.SizeNamePadding)
-	if pad < 0 {
-		pad = 0
-	}
-
-	cols := f.gridCols
-	if cols < 1 {
-		cols = gridColumnCount(viewportWidth, base.Width, pad)
-		if cols < 1 {
-			cols = 1
-		}
-	}
-
-	// Stretch item width to fill the available space for the chosen column count.
-	// Padding stays fixed (theme padding), so vertical spacing doesn't change.
-	itemWidth := (viewportWidth-float32(cols-1)*pad)/float32(cols) - gridColumnFloatEpsilon
-	if itemWidth < base.Width {
-		itemWidth = base.Width
-	}
-	return fyne.NewSize(itemWidth, base.Height)
+	// Return stable base size. Fyne's GridWrap.StretchItems handles stretching at layout time.
+	return calculateItemSizeWithZoom(view, zoom)
 }
 
 func (f *fileList) gridViewportWidthForLayout() float32 {
