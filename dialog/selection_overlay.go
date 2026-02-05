@@ -151,7 +151,11 @@ func (r *selectionOverlayRenderer) MinSize() fyne.Size {
 }
 
 func (r *selectionOverlayRenderer) Refresh() {
-	r.s.content.Refresh()
+	// Avoid cascading refreshes into the file list on every popup refresh.
+	// The content should refresh itself when it changes.
+	for _, obj := range r.s.debugRects {
+		obj.Refresh()
+	}
 	r.s.rect.Refresh()
 }
 

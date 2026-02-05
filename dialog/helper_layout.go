@@ -5,10 +5,6 @@ import (
 	"fyne.io/fyne/v2/theme"
 )
 
-func calculateItemSize(view ViewLayout) fyne.Size {
-	return calculateItemSizeWithZoom(view, 1.0)
-}
-
 func calculateItemSizeWithZoom(view ViewLayout, zoom float32) fyne.Size {
 	// Standard Text Height Measurement
 	// We use "A" as a representative character for line height

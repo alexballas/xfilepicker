@@ -54,7 +54,6 @@ type fileList struct {
 }
 
 const gridColumnHysteresisPx float32 = 2.0
-const gridColumnFloatEpsilon float32 = 0.01
 
 type FileSortOrder int
 
@@ -143,7 +142,6 @@ func (f *fileList) onResize() {
 	// GridWrap caches its column count and item MinSizes (which we make width-dependent
 	// to stretch cells and avoid dead space). Force a recalculation on resize.
 	// Refresh re-measures item MinSize (our items depend on viewport width); Resize clears its internal column cache.
-	f.grid.Refresh()
 	f.grid.Resize(f.grid.Size())
 
 	// Restore scroll position using the same ratio.
@@ -603,6 +601,8 @@ func formatGridFileNameWithMeasure(name string, width float32, measure func(stri
 
 	// Only "protect" extensions when there's a base name to show.
 	ext := filepath.Ext(name)
+	extDisplay := ext
+	extText := strings.TrimPrefix(ext, ".")
 	base := strings.TrimSuffix(name, ext)
 	if ext == "" || base == "" {
 		// No extension or just an extension (like ".bashrc") - wrap across lines if needed.
@@ -616,7 +616,7 @@ func formatGridFileNameWithMeasure(name string, width float32, measure func(stri
 	)
 
 	// Check if extension fits on a single line.
-	extFits := measure(ext) <= width
+	extFits := measure(extDisplay) <= width
 
 	lines := make([]string, 0, maxLines)
 	remaining := base
@@ -634,7 +634,7 @@ func formatGridFileNameWithMeasure(name string, width float32, measure func(stri
 	// Build the extension line(s).
 	if remaining != "" {
 		// Base was truncated, need to show ".." before extension.
-		dotsExtCombined := dots + ext
+		dotsExtCombined := dots + extText
 		dotsExtFits := measure(dotsExtCombined) <= width
 
 		if dotsExtFits {
@@ -644,14 +644,14 @@ func formatGridFileNameWithMeasure(name string, width float32, measure func(stri
 			// Extension fits alone but "..ext" doesn't - put ".." on one line, ext on next.
 			lines = append(lines, dots)
 			if len(lines) < maxLines {
-				lines = append(lines, ext)
+				lines = append(lines, extDisplay)
 			}
 		} else {
 			// Neither fits - put ".." then wrap extension across remaining lines.
 			lines = append(lines, dots)
 			remainingLines := maxLines - len(lines)
 			if remainingLines > 0 {
-				extWrapped := wrapTextToLines(ext, width, remainingLines, measure)
+				extWrapped := wrapTextToLines(extDisplay, width, remainingLines, measure)
 				for _, line := range strings.Split(extWrapped, "\n") {
 					if len(lines) < maxLines {
 						lines = append(lines, line)
@@ -662,12 +662,12 @@ func formatGridFileNameWithMeasure(name string, width float32, measure func(stri
 	} else {
 		// No truncation needed for base, just add the extension.
 		if extFits {
-			lines = append(lines, ext)
+			lines = append(lines, extDisplay)
 		} else {
 			// Extension doesn't fit on one line, wrap it across remaining lines.
 			remainingLines := maxLines - len(lines)
 			if remainingLines > 0 {
-				extWrapped := wrapTextToLines(ext, width, remainingLines, measure)
+				extWrapped := wrapTextToLines(extDisplay, width, remainingLines, measure)
 				for _, line := range strings.Split(extWrapped, "\n") {
 					if len(lines) < maxLines {
 						lines = append(lines, line)
@@ -715,16 +715,6 @@ func wrapTextToLines(text string, width float32, maxLines int, measure func(stri
 	return strings.Join(lines, "\n")
 }
 
-func appendOrReplaceLastLine(lines []string, last string, maxLines int) []string {
-	if len(lines) < maxLines {
-		return append(lines, last)
-	}
-	if len(lines) == 0 {
-		return []string{last}
-	}
-	lines[len(lines)-1] = last
-	return lines
-}
 
 func fitPrefixByWidth(s string, width float32, measure func(string) float32) string {
 	if s == "" || width <= 0 {
@@ -886,7 +876,6 @@ func (r *fileItemRenderer) Refresh() {
 	r.item.bg.Refresh()
 	r.item.icon.Refresh()
 	r.item.customIcon.Refresh()
-	r.item.thumbnail.Refresh()
 	r.item.label.Refresh()
 }
 
@@ -905,9 +894,6 @@ func (f *fileList) getItemSize() fyne.Size {
 }
 
 func (f *fileList) itemSizeWithZoom(view ViewLayout, zoom float32) fyne.Size {
-	if view != GridView {
-		return calculateItemSizeWithZoom(view, zoom)
-	}
 	// Return stable base size. Fyne's GridWrap.StretchItems handles stretching at layout time.
 	return calculateItemSizeWithZoom(view, zoom)
 }
