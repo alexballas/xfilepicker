@@ -213,6 +213,93 @@ func TestFileList_GridView_StretchesCellsToFillWidth(t *testing.T) {
 	}
 }
 
+func TestFileList_GridView_DoesNotOscillateColumnCountAtFixedViewport(t *testing.T) {
+	test.NewApp()
+
+	picker := &mockPicker{}
+	fl := newFileList(picker)
+	fl.setView(GridView)
+
+	var files []fyne.URI
+	for i := 0; i < 200; i++ {
+		files = append(files, storage.NewFileURI(filepath.Join("/tmp", fmt.Sprintf("file-%03d.txt", i))))
+	}
+	fl.setFiles(files)
+
+	// Put the full fileList scroll into a window so we match the real dialog structure.
+	win := test.NewTempWindow(t, fl.content)
+	win.Resize(fyne.NewSize(520, 240))
+
+	outerPad := theme.Padding() * 2 // container.NewPadded(...)
+	innerPad := fl.grid.Theme().Size(theme.SizeNamePadding)
+	base := calculateItemSizeWithZoom(GridView, fl.getZoom())
+
+	threshold := func(cols int) float32 {
+		if cols < 1 {
+			return 0
+		}
+		return float32(cols)*base.Width + float32(cols-1)*innerPad
+	}
+
+	// Probe around the 3->4 and 4->5 column thresholds (plus outer padding),
+	// and ensure repeated refresh/reflow doesn't flip-flop the computed column count.
+	widths := []float32{
+		threshold(3) + outerPad - 1,
+		threshold(3) + outerPad + 1,
+		threshold(4) + outerPad - 1,
+		threshold(4) + outerPad + 1,
+	}
+
+	for _, w := range widths {
+		win.Resize(fyne.NewSize(w, 240))
+		fl.onResize()
+		want := fl.grid.ColumnCount()
+
+		for i := 0; i < 8; i++ {
+			// Emulate layout churn: refresh (re-measure item MinSize) and clear column cache.
+			fl.grid.Refresh()
+			fl.grid.Resize(fl.grid.Size())
+			if got := fl.grid.ColumnCount(); got != want {
+				t.Fatalf("column count oscillated at width %.2f: want %d, got %d (iter %d)", w, want, got, i)
+			}
+		}
+	}
+}
+
+func TestFileList_GridView_ShrinkDoesNotIncreaseColumnsWhenResizeHandlingCatchesUp(t *testing.T) {
+	test.NewApp()
+
+	picker := &mockPicker{}
+	fl := newFileList(picker)
+	fl.setView(GridView)
+
+	var files []fyne.URI
+	for i := 0; i < 200; i++ {
+		files = append(files, storage.NewFileURI(filepath.Join("/tmp", fmt.Sprintf("file-%03d.txt", i))))
+	}
+	fl.setFiles(files)
+
+	win := test.NewTempWindow(t, fl.content)
+
+	// Start wide enough that we get a stable (base-fitting) column count.
+	win.Resize(fyne.NewSize(700, 240))
+	fl.onResize()
+
+	// Now shrink, but emulate the situation where the debounced resize handler hasn't run yet:
+	// the widget is laid out at the new width, but fileList.onResize is delayed.
+	win.Resize(fyne.NewSize(660, 240))
+	fl.grid.Refresh()
+	fl.grid.Resize(fl.grid.Size())
+	colsBefore := fl.grid.ColumnCount()
+
+	// When the resize handler catches up, columns must not increase at the same viewport width.
+	fl.onResize()
+	colsAfter := fl.grid.ColumnCount()
+	if colsAfter > colsBefore {
+		t.Fatalf("unexpected column increase after onResize catch-up at fixed width: %d -> %d", colsBefore, colsAfter)
+	}
+}
+
 func TestFormatGridFileNameWithMeasure_TruncationKeepsDotsBeforeExtension(t *testing.T) {
 	measure := func(s string) float32 { return float32(utf8.RuneCountInString(s)) }
 

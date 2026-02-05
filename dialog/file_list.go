@@ -115,7 +115,7 @@ func (f *fileList) onResize() {
 		return
 	}
 
-	width := f.grid.Size().Width
+	width := f.gridViewportWidthForLayout()
 	if width <= 0 {
 		return
 	}
@@ -130,6 +130,8 @@ func (f *fileList) onResize() {
 
 	// GridWrap caches its column count and item MinSizes (which we make width-dependent
 	// to stretch cells and avoid dead space). Force a recalculation on resize.
+	// Refresh re-measures item MinSize (our items depend on viewport width); Resize clears its internal column cache.
+	f.grid.Refresh()
 	f.grid.Resize(f.grid.Size())
 }
 
@@ -267,8 +269,11 @@ func (f *fileList) refresh() {
 	if f.view == GridView {
 		f.lastGridViewportWidth = 0
 		f.gridCols = 0
+		// Ensure the grid is repainted even if we don't have a viewport size yet (e.g. before first layout).
 		f.grid.Refresh()
-		f.grid.Resize(f.grid.Size())
+		// Prime the grid sizing for the current viewport even if the window isn't being resized
+		// (e.g. view toggle). This avoids transient column/scrollbar jitter.
+		f.onResize()
 	} else {
 		f.list.Refresh()
 	}
@@ -828,7 +833,7 @@ func (f *fileList) itemSizeWithZoom(view ViewLayout, zoom float32) fyne.Size {
 		return base
 	}
 
-	viewportWidth := f.grid.Size().Width
+	viewportWidth := f.gridViewportWidthForLayout()
 	if viewportWidth <= 0 {
 		return base
 	}
@@ -853,6 +858,28 @@ func (f *fileList) itemSizeWithZoom(view ViewLayout, zoom float32) fyne.Size {
 		itemWidth = base.Width
 	}
 	return fyne.NewSize(itemWidth, base.Height)
+}
+
+func (f *fileList) gridViewportWidthForLayout() float32 {
+	// When the GridWrap is embedded in our outer Scroll (for clipping/overlay),
+	// its Size() can temporarily reflect the scroll content size (MinSize) during
+	// layout churn. That creates a feedback loop where item MinSize depends on
+	// grid Size and scrollbars can oscillate. Use the viewport (Scroll) width
+	// instead when available.
+	if f != nil && f.content != nil {
+		w := f.content.Size().Width
+		if w > 0 {
+			// content is wrapped in container.NewPadded(...)
+			w -= theme.Padding() * 2
+			if w > 0 {
+				return w
+			}
+		}
+	}
+	if f != nil && f.grid != nil {
+		return f.grid.Size().Width
+	}
+	return 0
 }
 
 func (f *fileList) recomputeGridCols(viewportWidth float32, zoom float32) {
