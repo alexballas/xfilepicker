@@ -48,7 +48,13 @@ type fileList struct {
 	autoScrollStop   chan struct{}
 	autoScrollDir    int
 	autoScrollStep   float32
+
+	lastGridViewportWidth float32
+	gridCols              int
 }
+
+const gridColumnHysteresisPx float32 = 2.0
+const gridColumnFloatEpsilon float32 = 0.01
 
 type FileSortOrder int
 
@@ -70,9 +76,13 @@ func newFileList(p FilePicker) *fileList {
 
 	f.overlay = newSelectionOverlay(nil, f.onSelectionDrag, f.onSelectionEnd)
 
+	itemSize := func(view ViewLayout, zoom float32) fyne.Size {
+		return f.itemSizeWithZoom(view, zoom)
+	}
+
 	f.grid = widget.NewGridWrap(
 		func() int { return len(f.filtered) },
-		func() fyne.CanvasObject { return newFileItem(f.picker, f.getZoom) },
+		func() fyne.CanvasObject { return newFileItem(f.picker, f.getZoom, itemSize) },
 		func(id widget.GridWrapItemID, o fyne.CanvasObject) {
 			item := o.(*fileItem)
 			item.id = int(id)
@@ -85,7 +95,7 @@ func newFileList(p FilePicker) *fileList {
 
 	f.list = widget.NewList(
 		func() int { return len(f.filtered) },
-		func() fyne.CanvasObject { return newFileItem(f.picker, f.getZoom) },
+		func() fyne.CanvasObject { return newFileItem(f.picker, f.getZoom, itemSize) },
 		func(id widget.ListItemID, o fyne.CanvasObject) {
 			item := o.(*fileItem)
 			item.id = id
@@ -98,6 +108,29 @@ func newFileList(p FilePicker) *fileList {
 
 	f.content = container.NewScroll(nil)
 	return f
+}
+
+func (f *fileList) onResize() {
+	if f == nil || f.view != GridView || f.grid == nil {
+		return
+	}
+
+	width := f.grid.Size().Width
+	if width <= 0 {
+		return
+	}
+
+	// Ignore tiny jitter to avoid resize-trigger loops.
+	if abs32(width-f.lastGridViewportWidth) < 0.5 {
+		return
+	}
+
+	f.recomputeGridCols(width, f.getZoom())
+	f.lastGridViewportWidth = width
+	f.grid.Refresh()
+
+	// GridWrap caches its column count; force a recalculation after item MinSize changes.
+	f.grid.Resize(f.grid.Size())
 }
 
 func (f *fileList) getZoom() float32 {
@@ -232,7 +265,10 @@ func (f *fileList) refresh() {
 
 	f.content.Refresh()
 	if f.view == GridView {
+		f.lastGridViewportWidth = 0
+		f.gridCols = 0
 		f.grid.Refresh()
+		f.grid.Resize(f.grid.Size())
 	} else {
 		f.list.Refresh()
 	}
@@ -251,6 +287,7 @@ type fileItem struct {
 	widget.BaseWidget
 	picker FilePicker
 	zoom   func() float32
+	itemSz func(view ViewLayout, zoom float32) fyne.Size
 	id     int
 	uri    fyne.URI
 
@@ -267,10 +304,11 @@ type fileItem struct {
 	loadTimer   *time.Timer
 }
 
-func newFileItem(p FilePicker, zoom func() float32) *fileItem {
+func newFileItem(p FilePicker, zoom func() float32, itemSize func(view ViewLayout, zoom float32) fyne.Size) *fileItem {
 	item := &fileItem{
 		picker:     p,
 		zoom:       zoom,
+		itemSz:     itemSize,
 		icon:       widget.NewFileIcon(nil),
 		customIcon: widget.NewIcon(nil),
 		thumbnail:  canvas.NewImageFromImage(nil),
@@ -322,7 +360,13 @@ func (i *fileItem) setURI(u fyne.URI, view ViewLayout) {
 
 		// Max 3 lines. Strict measurement to ensure it fits.
 		// Use a safeLimit as heuristic to avoid the edge case where wrapping creates a 4th line.
-		safeLimit := float32(2.4) * (float32(fileIconCellWidth) * zoom)
+		cellWidth := float32(fileIconCellWidth) * zoom
+		if i.itemSz != nil {
+			if s := i.itemSz(GridView, zoom); s.Width > 0 {
+				cellWidth = s.Width
+			}
+		}
+		safeLimit := float32(2.4) * cellWidth
 
 		textSize := theme.TextSize()
 		textStyle := i.label.TextStyle
@@ -570,7 +614,11 @@ func (r *fileItemRenderer) Layout(size fyne.Size) {
 
 func (r *fileItemRenderer) MinSize() fyne.Size {
 	view := r.item.picker.GetView()
-	return calculateItemSizeWithZoom(view, r.item.zoomScale())
+	zoom := r.item.zoomScale()
+	if r.item.itemSz != nil {
+		return r.item.itemSz(view, zoom)
+	}
+	return calculateItemSizeWithZoom(view, zoom)
 }
 
 func (r *fileItemRenderer) Refresh() {
@@ -592,7 +640,95 @@ func (r *fileItemRenderer) Destroy() {
 }
 
 func (f *fileList) getItemSize() fyne.Size {
-	return calculateItemSizeWithZoom(f.view, f.getZoom())
+	return f.itemSizeWithZoom(f.view, f.getZoom())
+}
+
+func (f *fileList) itemSizeWithZoom(view ViewLayout, zoom float32) fyne.Size {
+	if view != GridView {
+		return calculateItemSizeWithZoom(view, zoom)
+	}
+	base := calculateItemSizeWithZoom(GridView, zoom)
+	if f == nil || f.grid == nil {
+		return base
+	}
+
+	viewportWidth := f.grid.Size().Width
+	if viewportWidth <= 0 {
+		return base
+	}
+
+	pad := f.grid.Theme().Size(theme.SizeNamePadding)
+	if pad < 0 {
+		pad = 0
+	}
+
+	cols := f.gridCols
+	if cols < 1 {
+		cols = gridColumnCount(viewportWidth, base.Width, pad)
+		if cols < 1 {
+			cols = 1
+		}
+	}
+
+	// Stretch item width to fill the available space for the chosen column count.
+	// Padding stays fixed (theme padding), so vertical spacing doesn't change.
+	itemWidth := (viewportWidth-float32(cols-1)*pad)/float32(cols) - gridColumnFloatEpsilon
+	if itemWidth < base.Width {
+		itemWidth = base.Width
+	}
+	return fyne.NewSize(itemWidth, base.Height)
+}
+
+func (f *fileList) recomputeGridCols(viewportWidth float32, zoom float32) {
+	if f == nil || f.grid == nil || viewportWidth <= 0 {
+		return
+	}
+
+	base := calculateItemSizeWithZoom(GridView, zoom)
+	pad := f.grid.Theme().Size(theme.SizeNamePadding)
+	if pad < 0 {
+		pad = 0
+	}
+
+	candidate := gridColumnCount(viewportWidth, base.Width, pad)
+	if candidate < 1 {
+		candidate = 1
+	}
+
+	cur := f.gridCols
+	if cur < 1 {
+		f.gridCols = candidate
+		return
+	}
+
+	requiredWidth := func(cols int) float32 {
+		if cols < 1 {
+			return 0
+		}
+		return float32(cols)*base.Width + float32(cols-1)*pad
+	}
+
+	// If current column count no longer fits at base width, we must reduce immediately.
+	if viewportWidth < requiredWidth(cur) {
+		f.gridCols = candidate
+		return
+	}
+
+	// Apply hysteresis around the thresholds to prevent rapid toggling.
+	switch {
+	case candidate > cur:
+		next := requiredWidth(cur + 1)
+		if viewportWidth < next+gridColumnHysteresisPx {
+			candidate = cur
+		}
+	case candidate < cur:
+		this := requiredWidth(cur)
+		if viewportWidth > this-gridColumnHysteresisPx {
+			candidate = cur
+		}
+	}
+
+	f.gridCols = candidate
 }
 
 func (f *fileList) centerAnchorID(view ViewLayout, zoom float32) int {
@@ -609,7 +745,7 @@ func (f *fileList) centerAnchorID(view ViewLayout, zoom float32) int {
 		}
 		viewport := f.grid.Size()
 		pad := f.grid.Theme().Size(theme.SizeNamePadding)
-		itemSize := calculateItemSizeWithZoom(GridView, zoom)
+		itemSize := f.itemSizeWithZoom(GridView, zoom)
 
 		cols := gridColumnCount(viewport.Width, itemSize.Width, pad)
 		stepX := itemSize.Width + pad
@@ -652,7 +788,7 @@ func (f *fileList) scrollCenterOnID(view ViewLayout, id int, zoom float32) {
 
 		viewport := f.grid.Size()
 		pad := f.grid.Theme().Size(theme.SizeNamePadding)
-		itemSize := calculateItemSizeWithZoom(GridView, zoom)
+		itemSize := f.itemSizeWithZoom(GridView, zoom)
 
 		// Force column count recalculation for the new item width.
 		f.grid.Resize(viewport)
@@ -1040,6 +1176,13 @@ func max32(a, b float32) float32 {
 		return a
 	}
 	return b
+}
+
+func abs32(v float32) float32 {
+	if v < 0 {
+		return -v
+	}
+	return v
 }
 
 func sameSelection(a, b []int) bool {

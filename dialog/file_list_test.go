@@ -8,6 +8,7 @@ import (
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/storage"
 	"fyne.io/fyne/v2/test"
+	"fyne.io/fyne/v2/theme"
 )
 
 type mockPicker struct{}
@@ -143,5 +144,69 @@ func TestFileList_MarqueeSelection_StartAnchorStableAcrossScroll(t *testing.T) {
 	}
 	if !found0 {
 		t.Fatalf("Expected selection to still include item 0 after scrolling during drag, got %v", picker.selectedIDs)
+	}
+}
+
+func TestFileList_GridView_StretchesCellsToFillWidth(t *testing.T) {
+	test.NewApp()
+
+	picker := &mockPicker{}
+	fl := newFileList(picker)
+	fl.setView(GridView)
+
+	var files []fyne.URI
+	for i := 0; i < 50; i++ {
+		files = append(files, storage.NewFileURI(filepath.Join("/tmp", fmt.Sprintf("file-%03d.txt", i))))
+	}
+	fl.setFiles(files)
+
+	win := test.NewTempWindow(t, fl.grid)
+	win.Resize(fyne.NewSize(300, 200))
+
+	pad := fl.grid.Theme().Size(theme.SizeNamePadding)
+	base := calculateItemSizeWithZoom(GridView, fl.getZoom())
+
+	// Slowly resize and make sure we don't skip from 2->4 columns without ever hitting 3,
+	// and that each computed layout uses all available width (no dead space strip).
+	lastCols := 0
+	seen := map[int]bool{}
+	for width := float32(260); width <= 520; width += 5 {
+		viewport := fyne.NewSize(width, 200)
+		// Apply resize through the window canvas so the widget renderer is active.
+		// This more closely matches how GridWrap behaves in real UI layouts.
+		win.Resize(viewport)
+		fl.onResize()
+
+		cols := fl.grid.ColumnCount()
+		seen[cols] = true
+
+		if lastCols != 0 && cols-lastCols > 1 {
+			t.Fatalf("unexpected column jump at width %.2f: %d -> %d", width, lastCols, cols)
+		}
+		lastCols = cols
+
+		itemSize := fl.getItemSize()
+		used := float32(cols)*itemSize.Width + float32(cols-1)*pad
+		targetWidth := fl.grid.Size().Width
+		if diff := abs32(used - targetWidth); diff > 0.6 {
+			t.Fatalf("expected grid to fill width; used %.2f vs grid %.2f (diff %.2f, cols %d, pad %.2f, item %.2f)", used, targetWidth, diff, cols, pad, itemSize.Width)
+		}
+	}
+
+	if !seen[3] && seen[4] {
+		t.Fatalf("expected to reach 3 columns before 4 (baseWidth %.2f, pad %.2f); saw %v", base.Width, pad, seen)
+	}
+
+	// Now slowly shrink; column count should not increase while width is decreasing.
+	prevCols := lastCols
+	for width := float32(515); width >= 260; width -= 5 {
+		win.Resize(fyne.NewSize(width, 200))
+		fl.onResize()
+
+		cols := fl.grid.ColumnCount()
+		if cols > prevCols {
+			t.Fatalf("unexpected column increase while shrinking at width %.2f: %d -> %d", width, prevCols, cols)
+		}
+		prevCols = cols
 	}
 }

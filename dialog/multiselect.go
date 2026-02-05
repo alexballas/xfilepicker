@@ -579,6 +579,9 @@ func (f *fileDialog) makeUI() fyne.CanvasObject {
 		internal: layout.NewStackLayout(),
 		onResize: func() {
 			f.DismissMenu()
+			if f.fileList != nil {
+				f.fileList.onResize()
+			}
 		},
 	}, container.NewBorder(globalHeader, footer, nil, nil, split))
 }
