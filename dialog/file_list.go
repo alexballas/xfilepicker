@@ -578,9 +578,10 @@ func formatGridFileName(name string, width float32, style fyne.TextStyle) string
 		return name
 	}
 
-	// Safety margin to avoid 1px clipping due to rounding differences between
+	// Safety margin to avoid clipping due to rounding differences between
 	// RenderedTextSize measurements and actual rendering.
-	width = max32(width-2.0, 0)
+	// Increased to 4x Padding to be absolutely safe against clipping.
+	width = max32(width-theme.Padding()*4, 0)
 
 	textSize := theme.TextSize()
 	measure := func(s string) float32 {
@@ -604,25 +605,23 @@ func formatGridFileNameWithMeasure(name string, width float32, measure func(stri
 	ext := filepath.Ext(name)
 	base := strings.TrimSuffix(name, ext)
 	if ext == "" || base == "" {
-		return name
+		// No extension or just an extension (like ".bashrc") - wrap across lines if needed.
+		return wrapTextToLines(name, width, 3, measure)
 	}
 
 	const (
 		maxLines     = 3
 		baseMaxLines = 2
+		dots         = ".."
 	)
 
-	// Always add the extension as the final line. When base text must be truncated,
-	// show the truncation marker together with the extension (e.g. "...mp4") so it
-	// can't be visually separated/hidden during tight resizes.
-	extLine := ext
-	if measure(extLine) > width {
-		extLine = fitSuffixByWidth(extLine, width, measure)
-	}
+	// Check if extension fits on a single line.
+	extFits := measure(ext) <= width
 
 	lines := make([]string, 0, maxLines)
 	remaining := base
 
+	// Fill base name lines.
 	for len(lines) < baseMaxLines && remaining != "" {
 		head := fitPrefixByWidth(remaining, width, measure)
 		if head == "" {
@@ -632,24 +631,87 @@ func formatGridFileNameWithMeasure(name string, width float32, measure func(stri
 		remaining = strings.TrimPrefix(remaining, head)
 	}
 
-	// If we still have remaining base text, mark truncation on the extension line.
+	// Build the extension line(s).
 	if remaining != "" {
-		dots := ".."
-		dotsW := measure(dots)
-		switch {
-		case dotsW >= width:
-			extLine = dots
-		default:
-			avail := width - dotsW
-			extSuffix := ext
-			if measure(extSuffix) > avail {
-				extSuffix = fitSuffixByWidth(extSuffix, avail, measure)
+		// Base was truncated, need to show ".." before extension.
+		dotsExtCombined := dots + ext
+		dotsExtFits := measure(dotsExtCombined) <= width
+
+		if dotsExtFits {
+			// "..ext" fits on one line - use it.
+			lines = append(lines, dotsExtCombined)
+		} else if extFits {
+			// Extension fits alone but "..ext" doesn't - put ".." on one line, ext on next.
+			lines = append(lines, dots)
+			if len(lines) < maxLines {
+				lines = append(lines, ext)
 			}
-			extLine = dots + extSuffix
+		} else {
+			// Neither fits - put ".." then wrap extension across remaining lines.
+			lines = append(lines, dots)
+			remainingLines := maxLines - len(lines)
+			if remainingLines > 0 {
+				extWrapped := wrapTextToLines(ext, width, remainingLines, measure)
+				for _, line := range strings.Split(extWrapped, "\n") {
+					if len(lines) < maxLines {
+						lines = append(lines, line)
+					}
+				}
+			}
+		}
+	} else {
+		// No truncation needed for base, just add the extension.
+		if extFits {
+			lines = append(lines, ext)
+		} else {
+			// Extension doesn't fit on one line, wrap it across remaining lines.
+			remainingLines := maxLines - len(lines)
+			if remainingLines > 0 {
+				extWrapped := wrapTextToLines(ext, width, remainingLines, measure)
+				for _, line := range strings.Split(extWrapped, "\n") {
+					if len(lines) < maxLines {
+						lines = append(lines, line)
+					}
+				}
+			}
 		}
 	}
 
-	lines = append(lines, extLine)
+	return strings.Join(lines, "\n")
+}
+
+// wrapTextToLines wraps text across multiple lines, each fitting within width.
+// The last line is truncated from the start (suffix-fit) if needed to ensure visibility.
+func wrapTextToLines(text string, width float32, maxLines int, measure func(string) float32) string {
+	if text == "" || width <= 0 || maxLines <= 0 {
+		return text
+	}
+	if measure(text) <= width {
+		return text
+	}
+
+	lines := make([]string, 0, maxLines)
+	remaining := text
+
+	for len(lines) < maxLines && remaining != "" {
+		if len(lines) == maxLines-1 {
+			// Last line: fit suffix to ensure end is visible.
+			line := fitSuffixByWidth(remaining, width, measure)
+			if line != "" {
+				lines = append(lines, line)
+			}
+			break
+		}
+		head := fitPrefixByWidth(remaining, width, measure)
+		if head == "" {
+			// Can't fit anything, just take the suffix on last line.
+			lines = append(lines, fitSuffixByWidth(remaining, width, measure))
+			break
+		}
+		lines = append(lines, head)
+		remaining = strings.TrimPrefix(remaining, head)
+	}
+
 	return strings.Join(lines, "\n")
 }
 

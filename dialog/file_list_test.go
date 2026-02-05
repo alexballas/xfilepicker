@@ -308,13 +308,13 @@ func TestFormatGridFileNameWithMeasure_TruncationKeepsDotsBeforeExtension(t *tes
 	measure := func(s string) float32 { return float32(utf8.RuneCountInString(s)) }
 
 	got := formatGridFileNameWithMeasure("abcdefghijklmnopqrstuvwxyz.txt", 6, measure)
-	want := "abcdef\nghijkl\n...txt"
+	want := "abcdef\nghijkl\n..txt"
 	if got != want {
 		t.Fatalf("unexpected formatting:\n got: %q\nwant: %q", got, want)
 	}
 
 	// When the base name is truncated, we always show the dots marker somewhere above the extension.
-	if !strings.Contains(got, "...") {
+	if !strings.Contains(got, "..") {
 		t.Fatalf("expected truncation marker before extension, got %q", got)
 	}
 }
@@ -322,9 +322,16 @@ func TestFormatGridFileNameWithMeasure_TruncationKeepsDotsBeforeExtension(t *tes
 func TestFormatGridFileNameWithMeasure_NoExtensionProtectionForDotfiles(t *testing.T) {
 	measure := func(s string) float32 { return float32(utf8.RuneCountInString(s)) }
 
-	// filepath.Ext(".bashrc") == "" so we should not split/protect.
+	// filepath.Ext(".bashrc") == "" so we fall back to standard wrapping.
+	// With width=3, ".bashrc" (7 chars) gets wrapped.
 	name := ".bashrc"
-	if got := formatGridFileNameWithMeasure(name, 3, measure); got != name {
-		t.Fatalf("expected dotfile name unchanged, got %q", got)
+	got := formatGridFileNameWithMeasure(name, 3, measure)
+	if got == name {
+		t.Fatalf("expected dotfile name to be wrapped/truncated, got %q", got)
+	}
+	// Expected wrapping for width=3: ".ba" then "shr" then "c" -> ".ba\nshr\nc"
+	want := ".ba\nshr\nc"
+	if got != want {
+		t.Fatalf("unexpected formatting for dotfile:\n got: %q\nwant: %q", got, want)
 	}
 }
