@@ -397,7 +397,7 @@ func (i *fileItem) setURI(u fyne.URI, view ViewLayout) {
 		i.label.Truncation = fyne.TextTruncateClip
 
 		// Keep formatting stable while GridWrap stretches cells during resize.
-		truncWidth := i.gridTruncationWidth(0)
+		truncWidth := i.gridBaseWidthForZoom(zoom)
 		name = formatGridFileName(name, truncWidth, i.label.TextStyle)
 		i.gridTruncWidth = truncWidth
 		i.gridTextSize = theme.TextSize()
@@ -866,8 +866,7 @@ func (i *fileItem) ensureGridLabel(width float32) {
 	})
 }
 
-func (i *fileItem) gridBaseWidth() float32 {
-	zoom := i.zoomScale()
+func (i *fileItem) gridBaseWidthForZoom(zoom float32) float32 {
 	baseWidth := float32(fileIconCellWidth) * zoom
 	if i.itemSz != nil {
 		if s := i.itemSz(GridView, zoom); s.Width > 0 {
@@ -875,6 +874,10 @@ func (i *fileItem) gridBaseWidth() float32 {
 		}
 	}
 	return baseWidth
+}
+
+func (i *fileItem) gridBaseWidth() float32 {
+	return i.gridBaseWidthForZoom(i.zoomScale())
 }
 
 func (i *fileItem) gridTruncationWidth(actualWidth float32) float32 {

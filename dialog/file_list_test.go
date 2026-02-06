@@ -359,16 +359,23 @@ func TestFormatGridFileNameWithMeasure_NoExtensionProtectionForDotfiles(t *testi
 	}
 }
 
-func TestStableGridLabelWidth_UsesBaseWhenCellIsStretched(t *testing.T) {
-	got := stableGridLabelWidth(120, 180)
-	if got != 120 {
-		t.Fatalf("expected base width for stretched cell, got %.2f", got)
+func TestStableGridLabelWidth(t *testing.T) {
+	tests := []struct {
+		name   string
+		base   float32
+		actual float32
+		want   float32
+	}{
+		{name: "stretched uses base", base: 120, actual: 180, want: 120},
+		{name: "narrow uses actual", base: 120, actual: 90, want: 90},
 	}
-}
 
-func TestStableGridLabelWidth_UsesActualWhenCellIsNarrowerThanBase(t *testing.T) {
-	got := stableGridLabelWidth(120, 90)
-	if got != 90 {
-		t.Fatalf("expected actual width for narrow cell, got %.2f", got)
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := stableGridLabelWidth(tc.base, tc.actual)
+			if got != tc.want {
+				t.Fatalf("stableGridLabelWidth(%v, %v) = %.2f, want %.2f", tc.base, tc.actual, got, tc.want)
+			}
+		})
 	}
 }
