@@ -321,6 +321,24 @@ func (f *fileDialog) OpenSelection() {
 	f.open.OnTapped()
 }
 
+func (f *fileDialog) CopyPath(uri fyne.URI) {
+	if uri == nil {
+		return
+	}
+
+	path := uri.Path()
+	if path == "" {
+		path = uri.String()
+	}
+	if path == "" {
+		return
+	}
+
+	if app := fyne.CurrentApp(); app != nil {
+		app.Clipboard().SetContent(path)
+	}
+}
+
 func (f *fileDialog) SetFilter(filter storage.FileFilter) {
 	f.extensionFilter = filter
 	if f.win != nil {

@@ -553,12 +553,17 @@ func (i *fileItem) showContextMenu(pos fyne.Position) {
 		label = lang.L("Deselect")
 	}
 
-	menuItem := fyne.NewMenuItem(label, func() {
+	toggleItem := fyne.NewMenuItem(label, func() {
 		i.picker.ToggleSelection(i.id)
 		i.picker.DismissMenu()
 	})
 
-	menu := fyne.NewMenu("", menuItem)
+	copyPathItem := fyne.NewMenuItem(lang.L("Copy Path"), func() {
+		i.picker.CopyPath(i.uri)
+		i.picker.DismissMenu()
+	})
+
+	menu := fyne.NewMenu("", toggleItem, copyPathItem)
 	i.picker.ShowMenu(menu, pos, i)
 }
 

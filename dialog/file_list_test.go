@@ -25,6 +25,7 @@ func (m *mockPicker) ToggleSelection(id int)                                    
 func (m *mockPicker) ExtendSelection(id int)                                             {}
 func (m *mockPicker) IsSelected(uri fyne.URI) bool                                       { return false }
 func (m *mockPicker) OpenSelection()                                                     {}
+func (m *mockPicker) CopyPath(uri fyne.URI)                                              {}
 func (m *mockPicker) SetFilter(filter storage.FileFilter)                                {}
 func (m *mockPicker) IsMultiSelect() bool                                                { return false }
 func (m *mockPicker) ShowMenu(menu *fyne.Menu, pos fyne.Position, obj fyne.CanvasObject) {}
@@ -103,10 +104,66 @@ func (r *recordingPicker) ToggleSelection(id int)                               
 func (r *recordingPicker) ExtendSelection(id int)                                             {}
 func (r *recordingPicker) IsSelected(uri fyne.URI) bool                                       { return false }
 func (r *recordingPicker) OpenSelection()                                                     {}
+func (r *recordingPicker) CopyPath(uri fyne.URI)                                              {}
 func (r *recordingPicker) SetFilter(filter storage.FileFilter)                                {}
 func (r *recordingPicker) IsMultiSelect() bool                                                { return true }
 func (r *recordingPicker) ShowMenu(menu *fyne.Menu, pos fyne.Position, obj fyne.CanvasObject) {}
 func (r *recordingPicker) DismissMenu()                                                       {}
+
+type contextMenuPicker struct {
+	menu         *fyne.Menu
+	copiedURI    fyne.URI
+	dismissCalls int
+}
+
+func (c *contextMenuPicker) SetLocation(dir fyne.ListableURI)    {}
+func (c *contextMenuPicker) Refresh()                            {}
+func (c *contextMenuPicker) SetView(view ViewLayout)             {}
+func (c *contextMenuPicker) GetView() ViewLayout                 { return ListView }
+func (c *contextMenuPicker) Select(id int)                       {}
+func (c *contextMenuPicker) SelectMultiple(ids []int)            {}
+func (c *contextMenuPicker) ToggleSelection(id int)              {}
+func (c *contextMenuPicker) ExtendSelection(id int)              {}
+func (c *contextMenuPicker) IsSelected(uri fyne.URI) bool        { return false }
+func (c *contextMenuPicker) OpenSelection()                      {}
+func (c *contextMenuPicker) CopyPath(uri fyne.URI)               { c.copiedURI = uri }
+func (c *contextMenuPicker) SetFilter(filter storage.FileFilter) {}
+func (c *contextMenuPicker) IsMultiSelect() bool                 { return true }
+func (c *contextMenuPicker) ShowMenu(menu *fyne.Menu, pos fyne.Position, obj fyne.CanvasObject) {
+	c.menu = menu
+}
+func (c *contextMenuPicker) DismissMenu() { c.dismissCalls++ }
+
+func TestFileItem_ContextMenu_CopyPath(t *testing.T) {
+	test.NewApp()
+
+	picker := &contextMenuPicker{}
+	item := newFileItem(picker, func() float32 { return 1.0 }, calculateItemSizeWithZoom)
+	uri := storage.NewFileURI("/tmp/sample-folder/sample.txt")
+	item.id = 3
+	item.setURI(uri, ListView)
+
+	item.showContextMenu(fyne.NewPos(10, 10))
+	if picker.menu == nil {
+		t.Fatal("expected context menu to be shown")
+	}
+	if len(picker.menu.Items) != 2 {
+		t.Fatalf("expected 2 context menu items, got %d", len(picker.menu.Items))
+	}
+
+	copyPathItem := picker.menu.Items[1]
+	if copyPathItem.Action == nil {
+		t.Fatal("expected Copy Path item to have action")
+	}
+	copyPathItem.Action()
+
+	if picker.copiedURI == nil || picker.copiedURI.String() != uri.String() {
+		t.Fatalf("expected CopyPath to receive %q, got %v", uri.String(), picker.copiedURI)
+	}
+	if picker.dismissCalls != 1 {
+		t.Fatalf("expected menu to be dismissed once after copy action, got %d", picker.dismissCalls)
+	}
+}
 
 func TestFileList_MarqueeSelection_StartAnchorStableAcrossScroll(t *testing.T) {
 	test.NewApp()

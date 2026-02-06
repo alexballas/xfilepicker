@@ -45,6 +45,7 @@ type FilePicker interface {
 	ExtendSelection(id int)
 	IsSelected(uri fyne.URI) bool
 	OpenSelection()
+	CopyPath(uri fyne.URI)
 	SetFilter(filter storage.FileFilter)
 	IsMultiSelect() bool
 	ShowMenu(menu *fyne.Menu, pos fyne.Position, obj fyne.CanvasObject)

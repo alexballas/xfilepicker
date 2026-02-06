@@ -6,8 +6,22 @@ import (
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/layout"
+	"fyne.io/fyne/v2/storage"
 	"fyne.io/fyne/v2/test"
 )
+
+func TestFileDialog_CopyPath(t *testing.T) {
+	a := test.NewApp()
+	defer a.Quit()
+
+	d := &fileDialog{}
+	uri := storage.NewFileURI("/tmp/demo-folder/demo-file.txt")
+	d.CopyPath(uri)
+
+	if got, want := a.Clipboard().Content(), "/tmp/demo-folder/demo-file.txt"; got != want {
+		t.Fatalf("expected clipboard content %q, got %q", want, got)
+	}
+}
 
 func TestResizeLayout_OnResizeWhenExternalSizeChanges(t *testing.T) {
 	a := test.NewApp()
