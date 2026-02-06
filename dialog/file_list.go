@@ -320,7 +320,7 @@ type fileItem struct {
 	bg         *canvas.Rectangle
 
 	rawName         string
-	gridLabelWidth  float32
+	gridTruncWidth  float32
 	gridTextSize    float32
 	gridLabelQueued bool
 
@@ -396,13 +396,11 @@ func (i *fileItem) setURI(u fyne.URI, view ViewLayout) {
 		i.label.Wrapping = fyne.TextWrapOff
 		i.label.Truncation = fyne.TextTruncateClip
 
-		cellWidth := float32(fileIconCellWidth) * zoom
-		if i.itemSz != nil {
-			if s := i.itemSz(GridView, zoom); s.Width > 0 {
-				cellWidth = s.Width
-			}
-		}
-		name = formatGridFileName(name, cellWidth, i.label.TextStyle)
+		// Keep formatting stable while GridWrap stretches cells during resize.
+		truncWidth := i.gridTruncationWidth(0)
+		name = formatGridFileName(name, truncWidth, i.label.TextStyle)
+		i.gridTruncWidth = truncWidth
+		i.gridTextSize = theme.TextSize()
 	} else {
 		i.label.Alignment = fyne.TextAlignLeading
 		i.label.Wrapping = fyne.TextWrapOff
@@ -761,6 +759,18 @@ func fitSuffixByWidth(s string, width float32, measure func(string) float32) str
 	return string(runes[bestStart:])
 }
 
+func stableGridLabelWidth(baseWidth, actualWidth float32) float32 {
+	if baseWidth <= 0 {
+		return actualWidth
+	}
+	// Keep truncation stable at the minimum stretched width. If a cell is ever
+	// narrower than base (very tight layouts), fall back to actual width.
+	if actualWidth > 0 && actualWidth < baseWidth {
+		return actualWidth
+	}
+	return baseWidth
+}
+
 type fileItemRenderer struct {
 	item *fileItem
 }
@@ -819,8 +829,10 @@ func (i *fileItem) ensureGridLabel(width float32) {
 		return
 	}
 
+	targetWidth := i.gridTruncationWidth(width)
+
 	// Avoid churn during continuous resize.
-	if abs32(width-i.gridLabelWidth) < 1.0 && i.gridTextSize == theme.TextSize() {
+	if abs32(targetWidth-i.gridTruncWidth) < 1.0 && i.gridTextSize == theme.TextSize() {
 		return
 	}
 
@@ -840,17 +852,33 @@ func (i *fileItem) ensureGridLabel(width float32) {
 			return
 		}
 		curTextSize := theme.TextSize()
-		if abs32(curWidth-i.gridLabelWidth) < 1.0 && i.gridTextSize == curTextSize {
+		targetWidth := i.gridTruncationWidth(curWidth)
+		if abs32(targetWidth-i.gridTruncWidth) < 1.0 && i.gridTextSize == curTextSize {
 			return
 		}
 
-		newText := formatGridFileName(i.rawName, curWidth, i.label.TextStyle)
-		i.gridLabelWidth = curWidth
+		newText := formatGridFileName(i.rawName, targetWidth, i.label.TextStyle)
+		i.gridTruncWidth = targetWidth
 		i.gridTextSize = curTextSize
 		if i.label.Text != newText {
 			i.label.SetText(newText)
 		}
 	})
+}
+
+func (i *fileItem) gridBaseWidth() float32 {
+	zoom := i.zoomScale()
+	baseWidth := float32(fileIconCellWidth) * zoom
+	if i.itemSz != nil {
+		if s := i.itemSz(GridView, zoom); s.Width > 0 {
+			baseWidth = s.Width
+		}
+	}
+	return baseWidth
+}
+
+func (i *fileItem) gridTruncationWidth(actualWidth float32) float32 {
+	return stableGridLabelWidth(i.gridBaseWidth(), actualWidth)
 }
 
 func (r *fileItemRenderer) MinSize() fyne.Size {

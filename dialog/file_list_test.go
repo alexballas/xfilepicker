@@ -358,3 +358,17 @@ func TestFormatGridFileNameWithMeasure_NoExtensionProtectionForDotfiles(t *testi
 		t.Fatalf("unexpected formatting for dotfile:\n got: %q\nwant: %q", got, want)
 	}
 }
+
+func TestStableGridLabelWidth_UsesBaseWhenCellIsStretched(t *testing.T) {
+	got := stableGridLabelWidth(120, 180)
+	if got != 120 {
+		t.Fatalf("expected base width for stretched cell, got %.2f", got)
+	}
+}
+
+func TestStableGridLabelWidth_UsesActualWhenCellIsNarrowerThanBase(t *testing.T) {
+	got := stableGridLabelWidth(120, 90)
+	if got != 90 {
+		t.Fatalf("expected actual width for narrow cell, got %.2f", got)
+	}
+}
