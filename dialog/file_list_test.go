@@ -308,14 +308,24 @@ func TestFormatGridFileNameWithMeasure_TruncationKeepsDotsBeforeExtension(t *tes
 	measure := func(s string) float32 { return float32(utf8.RuneCountInString(s)) }
 
 	got := formatGridFileNameWithMeasure("abcdefghijklmnopqrstuvwxyz.txt", 6, measure)
-	want := "abcdef\nghijkl\n..txt"
+	want := "abcdef\nghijkl\n...txt"
 	if got != want {
 		t.Fatalf("unexpected formatting:\n got: %q\nwant: %q", got, want)
 	}
 
 	// When the base name is truncated, we always show the dots marker somewhere above the extension.
-	if !strings.Contains(got, "..") {
+	if !strings.Contains(got, "...") {
 		t.Fatalf("expected truncation marker before extension, got %q", got)
+	}
+}
+
+func TestFormatGridFileNameWithMeasure_ExtensionCanStayOnSecondLine(t *testing.T) {
+	measure := func(s string) float32 { return float32(utf8.RuneCountInString(s)) }
+
+	got := formatGridFileNameWithMeasure("abcdefghij.txt", 8, measure)
+	want := "abcdefgh\nij.txt"
+	if got != want {
+		t.Fatalf("unexpected formatting:\n got: %q\nwant: %q", got, want)
 	}
 }
 

@@ -594,6 +594,8 @@ func formatGridFileNameWithMeasure(name string, width float32, measure func(stri
 		return name
 	}
 
+	const maxLines = 3
+
 	// If the full name fits on one line, keep it as-is.
 	if measure(name) <= width {
 		return name
@@ -601,83 +603,58 @@ func formatGridFileNameWithMeasure(name string, width float32, measure func(stri
 
 	// Only "protect" extensions when there's a base name to show.
 	ext := filepath.Ext(name)
-	extDisplay := ext
 	extText := strings.TrimPrefix(ext, ".")
 	base := strings.TrimSuffix(name, ext)
 	if ext == "" || base == "" {
 		// No extension or just an extension (like ".bashrc") - wrap across lines if needed.
-		return wrapTextToLines(name, width, 3, measure)
+		return wrapTextToLines(name, width, maxLines, measure)
 	}
 
-	const (
-		maxLines     = 3
-		baseMaxLines = 2
-		dots         = ".."
-	)
+	// Let the full name flow naturally across 3 lines first. This avoids forcing
+	// the extension onto an extra line when earlier lines still have room.
+	if lines, ok := wrapTextToLinesStrict(name, width, maxLines, measure); ok {
+		return strings.Join(lines, "\n")
+	}
 
-	// Check if extension fits on a single line.
-	extFits := measure(extDisplay) <= width
+	// If we need truncation, keep the extension visible and truncate the base
+	// from right-to-left, inserting "..." directly before the extension.
+	const dots = "..."
+	truncSuffix := dots + extText
+	baseRunes := []rune(base)
+	for keep := len(baseRunes) - 1; keep >= 0; keep-- {
+		candidate := string(baseRunes[:keep]) + truncSuffix
+		if lines, ok := wrapTextToLinesStrict(candidate, width, maxLines, measure); ok {
+			return strings.Join(lines, "\n")
+		}
+	}
+
+	// Extremely narrow columns: show as much of the truncation suffix as possible.
+	if lines, ok := wrapTextToLinesStrict(truncSuffix, width, maxLines, measure); ok {
+		return strings.Join(lines, "\n")
+	}
+
+	return wrapTextToLines(truncSuffix, width, maxLines, measure)
+}
+
+// wrapTextToLinesStrict wraps text across multiple lines and reports whether the
+// full text fits in at most maxLines lines (no truncation).
+func wrapTextToLinesStrict(text string, width float32, maxLines int, measure func(string) float32) ([]string, bool) {
+	if text == "" || width <= 0 || maxLines <= 0 {
+		return []string{text}, false
+	}
 
 	lines := make([]string, 0, maxLines)
-	remaining := base
-
-	// Fill base name lines.
-	for len(lines) < baseMaxLines && remaining != "" {
+	remaining := text
+	for len(lines) < maxLines && remaining != "" {
 		head := fitPrefixByWidth(remaining, width, measure)
 		if head == "" {
-			break
+			return lines, false
 		}
 		lines = append(lines, head)
 		remaining = strings.TrimPrefix(remaining, head)
 	}
 
-	// Build the extension line(s).
-	if remaining != "" {
-		// Base was truncated, need to show ".." before extension.
-		dotsExtCombined := dots + extText
-		dotsExtFits := measure(dotsExtCombined) <= width
-
-		if dotsExtFits {
-			// "..ext" fits on one line - use it.
-			lines = append(lines, dotsExtCombined)
-		} else if extFits {
-			// Extension fits alone but "..ext" doesn't - put ".." on one line, ext on next.
-			lines = append(lines, dots)
-			if len(lines) < maxLines {
-				lines = append(lines, extDisplay)
-			}
-		} else {
-			// Neither fits - put ".." then wrap extension across remaining lines.
-			lines = append(lines, dots)
-			remainingLines := maxLines - len(lines)
-			if remainingLines > 0 {
-				extWrapped := wrapTextToLines(extDisplay, width, remainingLines, measure)
-				for _, line := range strings.Split(extWrapped, "\n") {
-					if len(lines) < maxLines {
-						lines = append(lines, line)
-					}
-				}
-			}
-		}
-	} else {
-		// No truncation needed for base, just add the extension.
-		if extFits {
-			lines = append(lines, extDisplay)
-		} else {
-			// Extension doesn't fit on one line, wrap it across remaining lines.
-			remainingLines := maxLines - len(lines)
-			if remainingLines > 0 {
-				extWrapped := wrapTextToLines(extDisplay, width, remainingLines, measure)
-				for _, line := range strings.Split(extWrapped, "\n") {
-					if len(lines) < maxLines {
-						lines = append(lines, line)
-					}
-				}
-			}
-		}
-	}
-
-	return strings.Join(lines, "\n")
+	return lines, remaining == ""
 }
 
 // wrapTextToLines wraps text across multiple lines, each fitting within width.
@@ -714,7 +691,6 @@ func wrapTextToLines(text string, width float32, maxLines int, measure func(stri
 
 	return strings.Join(lines, "\n")
 }
-
 
 func fitPrefixByWidth(s string, width float32, measure func(string) float32) string {
 	if s == "" || width <= 0 {
