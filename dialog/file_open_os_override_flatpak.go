@@ -15,6 +15,58 @@ import (
 )
 
 func fileOpenOSOverride(f *fileDialog) bool {
+	if f.isSaveMode() {
+		options := &filechooser.SaveFileOptions{
+			AcceptLabel: lang.L("Save"),
+		}
+		if f.dir != nil {
+			options.CurrentFolder = f.dir.Path()
+		}
+		if f.defaultSaveName != "" {
+			options.CurrentName = f.defaultSaveName
+		}
+		options.Filters, options.CurrentFilter = convertFilterForPortal(f.extensionFilter)
+		windowHandle := windowHandleForPortal(f.parent)
+
+		go func() {
+			uris, err := filechooser.SaveFile(windowHandle, lang.L("Save File"), options)
+			if err != nil {
+				fyne.Do(func() {
+					if f.saveCallback != nil {
+						f.saveCallback(nil, err)
+					}
+				})
+				return
+			}
+			if len(uris) == 0 {
+				fyne.Do(func() {
+					if f.saveCallback != nil {
+						f.saveCallback(nil, nil)
+					}
+				})
+				return
+			}
+
+			uri, err := storage.ParseURI(uris[0])
+			if err != nil {
+				fyne.Do(func() {
+					if f.saveCallback != nil {
+						f.saveCallback(nil, err)
+					}
+				})
+				return
+			}
+
+			writer, err := storage.Writer(uri)
+			fyne.Do(func() {
+				if f.saveCallback != nil {
+					f.saveCallback(writer, err)
+				}
+			})
+		}()
+		return true
+	}
+
 	options := &filechooser.OpenFileOptions{
 		AcceptLabel: lang.L("Open"),
 		Multiple:    f.allowMultiple,

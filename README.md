@@ -49,7 +49,21 @@ dialog.ShowFileOpen(func(readers []fyne.URIReadCloser, err error) {
         // Handle selection
     }
 }, window, false)
+
+// Save File
+dialog.ShowFileSave(func(writer fyne.URIWriteCloser, err error) {
+    if writer != nil {
+        // Write bytes and close
+        _, _ = writer.Write([]byte("hello"))
+        _ = writer.Close()
+    }
+}, window)
 ```
+
+Examples:
+* `go run examples/fileselector/main.go`
+* `go run examples/folderselector/main.go`
+* `go run examples/filesave/main.go`
 
 ## Requirements
 *   **FFmpeg** (Optional: required for video thumbnails).

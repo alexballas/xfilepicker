@@ -1,6 +1,8 @@
 package dialog
 
 import (
+	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -21,6 +23,7 @@ type openDialogMode int
 const (
 	openDialogModeFile openDialogMode = iota
 	openDialogModeFolder
+	openDialogModeSave
 )
 
 // ShowFileOpen creates and shows a file dialog allowing the user to choose
@@ -36,6 +39,22 @@ func NewFileOpen(callback func(readers []fyne.URIReadCloser, err error), parent 
 	d.mode = openDialogModeFile
 	d.callback = callback
 	d.allowMultiple = allowMultiple
+	d.loadPrefs()
+	return d
+}
+
+// ShowFileSave creates and shows a file dialog allowing the user to choose a file path for saving.
+func ShowFileSave(callback func(writer fyne.URIWriteCloser, err error), parent fyne.Window) {
+	d := NewFileSave(callback, parent)
+	d.Show()
+}
+
+// NewFileSave creates a file dialog allowing the user to choose a file path for saving.
+func NewFileSave(callback func(writer fyne.URIWriteCloser, err error), parent fyne.Window) dialog.Dialog {
+	d := newDialogBase(parent)
+	d.mode = openDialogModeSave
+	d.saveCallback = callback
+	d.allowMultiple = false
 	d.loadPrefs()
 	return d
 }
@@ -65,12 +84,14 @@ func newDialogBase(parent fyne.Window) *fileDialog {
 		zoomLevel: defaultZoomLevelIndex,
 		anchor:    -1,
 	}
+	d.confirmOverwrite = d.confirmOverwriteDialog
 	return d
 }
 
 type fileDialog struct {
 	callback       func([]fyne.URIReadCloser, error)
 	folderCallback func(fyne.ListableURI, error)
+	saveCallback   func(fyne.URIWriteCloser, error)
 	parent         fyne.Window
 	dir            fyne.ListableURI
 
@@ -84,6 +105,7 @@ type fileDialog struct {
 	// UI
 	win      *widget.PopUp
 	fileName *widget.Label
+	saveName *widget.Entry
 	open     *widget.Button
 	dismiss  *widget.Button
 
@@ -107,6 +129,9 @@ type fileDialog struct {
 	zoomOutBtn *widget.Button
 
 	mode openDialogMode
+
+	defaultSaveName  string
+	confirmOverwrite func(target fyne.URI, confirm func(bool))
 }
 
 func (f *fileDialog) Show() {
@@ -245,6 +270,10 @@ func (f *fileDialog) isFolderMode() bool {
 	return f.mode == openDialogModeFolder
 }
 
+func (f *fileDialog) isSaveMode() bool {
+	return f.mode == openDialogModeSave
+}
+
 func (f *fileDialog) ShowMenu(menu *fyne.Menu, pos fyne.Position, obj fyne.CanvasObject) {
 	f.DismissMenu()
 
@@ -278,6 +307,7 @@ func (f *fileDialog) Select(id int) {
 	f.selected = make(map[string]fyne.URI)
 	f.selected[uri.String()] = uri
 	f.anchor = id
+	f.updateSaveNameFromSelection()
 	f.updateFooter()
 	f.fileList.refresh()
 }
@@ -297,6 +327,7 @@ func (f *fileDialog) SelectMultiple(ids []int) {
 	if len(ids) > 0 {
 		f.anchor = ids[len(ids)-1]
 	}
+	f.updateSaveNameFromSelection()
 	f.updateFooter()
 	f.fileList.refresh()
 }
@@ -316,6 +347,7 @@ func (f *fileDialog) ToggleSelection(id int) {
 		f.selected[uri.String()] = uri
 	}
 	f.anchor = id
+	f.updateSaveNameFromSelection()
 	f.updateFooter()
 	f.fileList.refresh()
 }
@@ -344,6 +376,7 @@ func (f *fileDialog) ExtendSelection(id int) {
 		f.selected[u.String()] = u
 	}
 
+	f.updateSaveNameFromSelection()
 	f.updateFooter()
 	f.fileList.refresh()
 }
@@ -379,6 +412,13 @@ func (f *fileDialog) SetFilter(filter storage.FileFilter) {
 	f.extensionFilter = filter
 	if f.win != nil {
 		f.refreshDir(f.dir)
+	}
+}
+
+func (f *fileDialog) SetFileName(fileName string) {
+	f.defaultSaveName = fileName
+	if f.saveName != nil {
+		f.saveName.SetText(fileName)
 	}
 }
 
@@ -463,7 +503,7 @@ func (f *fileDialog) typedKeyHook(ev *fyne.KeyEvent) {
 		return
 	}
 
-	if f.open != nil && !f.open.Disabled() && len(f.selected) > 0 {
+	if f.open != nil && !f.open.Disabled() && (f.isSaveMode() || len(f.selected) > 0) {
 		f.open.OnTapped()
 	}
 }
@@ -483,48 +523,11 @@ func (f *fileDialog) makeUI() fyne.CanvasObject {
 	f.fileName = widget.NewLabel("")
 	f.fileName.Truncation = fyne.TextTruncateEllipsis
 
-	f.open = widget.NewButton(lang.L("Open"), func() {
-		if f.isFolderMode() {
-			target := f.dir
-			if len(f.selected) == 1 {
-				for _, u := range f.selected {
-					if l, err := storage.ListerForURI(u); err == nil {
-						target = l
-					}
-				}
-			}
-			f.Hide()
-			if f.folderCallback != nil {
-				f.folderCallback(target, nil)
-			}
-			return
-		}
-
-		if len(f.selected) == 1 {
-			var u fyne.URI
-			for _, val := range f.selected {
-				u = val
-			}
-			if isDir, _ := storage.CanList(u); isDir {
-				if l, err := storage.ListerForURI(u); err == nil {
-					f.SetLocation(l)
-					return
-				}
-			}
-		}
-
-		var readers []fyne.URIReadCloser
-		for _, u := range f.selected {
-			r, err := storage.Reader(u)
-			if err == nil {
-				readers = append(readers, r)
-			}
-		}
-		f.Hide()
-		if f.callback != nil {
-			f.callback(readers, nil)
-		}
-	})
+	confirmText := lang.L("Open")
+	if f.isSaveMode() {
+		confirmText = lang.L("Save")
+	}
+	f.open = widget.NewButton(confirmText, f.handleConfirmTapped)
 	f.open.Importance = widget.HighImportance
 	f.open.Disable()
 
@@ -536,12 +539,30 @@ func (f *fileDialog) makeUI() fyne.CanvasObject {
 			}
 			return
 		}
+		if f.isSaveMode() {
+			if f.saveCallback != nil {
+				f.saveCallback(nil, nil)
+			}
+			return
+		}
 		if f.callback != nil {
 			f.callback(nil, nil)
 		}
 	})
 
-	footer := container.NewBorder(nil, nil, nil, container.NewHBox(f.dismiss, f.open), container.NewHScroll(f.fileName))
+	footerContent := fyne.CanvasObject(container.NewHScroll(f.fileName))
+	if f.isSaveMode() {
+		f.saveName = widget.NewEntry()
+		f.saveName.SetPlaceHolder(lang.L("File Name"))
+		f.saveName.OnChanged = func(string) {
+			f.updateFooter()
+		}
+		if f.defaultSaveName != "" {
+			f.saveName.SetText(f.defaultSaveName)
+		}
+		footerContent = f.saveName
+	}
+	footer := container.NewBorder(nil, nil, nil, container.NewHBox(f.dismiss, f.open), footerContent)
 
 	// Header / TopBar
 	f.searchEntry = widget.NewEntry()
@@ -641,6 +662,8 @@ func (f *fileDialog) makeUI() fyne.CanvasObject {
 	titleText := lang.L("Open File")
 	if f.isFolderMode() {
 		titleText = lang.L("Open Folder")
+	} else if f.isSaveMode() {
+		titleText = lang.L("Save File")
 	} else if f.allowMultiple {
 		titleText = lang.L("Open Files")
 	}
@@ -669,7 +692,7 @@ func (f *fileDialog) makeUI() fyne.CanvasObject {
 	split.SetOffset(0.25)
 
 	// Wrap in a custom layout that detects resize
-	return container.New(&resizeLayout{
+	root := container.New(&resizeLayout{
 		internal: layout.NewStackLayout(),
 		onResize: func() {
 			f.DismissMenu()
@@ -684,6 +707,8 @@ func (f *fileDialog) makeUI() fyne.CanvasObject {
 			return f.parent.Canvas().Size()
 		},
 	}, container.NewBorder(globalHeader, footer, nil, nil, split))
+	f.updateFooter()
+	return root
 }
 
 type resizeLayout struct {
@@ -808,6 +833,19 @@ func (f *fileDialog) refreshDir(dir fyne.ListableURI) {
 }
 
 func (f *fileDialog) updateFooter() {
+	if f.open == nil {
+		return
+	}
+
+	if f.isSaveMode() {
+		if f.saveName != nil && strings.TrimSpace(f.saveName.Text) != "" {
+			f.open.Enable()
+		} else {
+			f.open.Disable()
+		}
+		return
+	}
+
 	if f.fileName == nil {
 		return
 	}
@@ -834,6 +872,205 @@ func (f *fileDialog) updateFooter() {
 	} else {
 		f.open.Enable()
 	}
+}
+
+func (f *fileDialog) handleConfirmTapped() {
+	if f.isFolderMode() {
+		target := f.dir
+		if len(f.selected) == 1 {
+			for _, u := range f.selected {
+				if l, err := storage.ListerForURI(u); err == nil {
+					target = l
+				}
+			}
+		}
+		f.Hide()
+		if f.folderCallback != nil {
+			f.folderCallback(target, nil)
+		}
+		return
+	}
+
+	if f.isSaveMode() {
+		f.handleSaveTapped()
+		return
+	}
+
+	if len(f.selected) == 1 {
+		var u fyne.URI
+		for _, val := range f.selected {
+			u = val
+		}
+		if isDir, _ := storage.CanList(u); isDir {
+			if l, err := storage.ListerForURI(u); err == nil {
+				f.SetLocation(l)
+				return
+			}
+		}
+	}
+
+	var readers []fyne.URIReadCloser
+	for _, u := range f.selected {
+		r, err := storage.Reader(u)
+		if err == nil {
+			readers = append(readers, r)
+		}
+	}
+	f.Hide()
+	if f.callback != nil {
+		f.callback(readers, nil)
+	}
+}
+
+func (f *fileDialog) handleSaveTapped() {
+	if f.saveName == nil {
+		return
+	}
+
+	name := strings.TrimSpace(f.saveName.Text)
+	if name == "" {
+		f.open.Disable()
+		return
+	}
+
+	target, err := f.saveTargetURI(name)
+	if err != nil {
+		if f.saveCallback != nil {
+			f.saveCallback(nil, err)
+		}
+		return
+	}
+
+	if canList, _ := storage.CanList(target); canList {
+		if l, lErr := storage.ListerForURI(target); lErr == nil {
+			f.SetLocation(l)
+			return
+		}
+	}
+
+	exists, err := storage.Exists(target)
+	if err != nil {
+		if f.saveCallback != nil {
+			f.saveCallback(nil, err)
+		}
+		return
+	}
+
+	if exists {
+		confirm := f.confirmOverwrite
+		if confirm == nil {
+			confirm = f.confirmOverwriteDialog
+		}
+		confirm(target, func(ok bool) {
+			if !ok {
+				return
+			}
+			f.createSaveWriter(target)
+		})
+		return
+	}
+
+	f.createSaveWriter(target)
+}
+
+func (f *fileDialog) createSaveWriter(target fyne.URI) {
+	writer, err := storage.Writer(target)
+	if err != nil {
+		if f.saveCallback != nil {
+			f.saveCallback(nil, err)
+		}
+		return
+	}
+	f.Hide()
+	if f.saveCallback != nil {
+		f.saveCallback(writer, nil)
+	}
+}
+
+func (f *fileDialog) confirmOverwriteDialog(target fyne.URI, confirm func(bool)) {
+	msg := fmt.Sprintf(lang.L("A file named %q already exists. Replace it?"), target.Name())
+	dialog.ShowConfirm(lang.L("Replace File"), msg, confirm, f.parent)
+}
+
+func (f *fileDialog) updateSaveNameFromSelection() {
+	if !f.isSaveMode() || f.saveName == nil || len(f.selected) == 0 {
+		return
+	}
+	selectedName := f.selectedEntryName()
+	if selectedName == "" {
+		return
+	}
+	f.saveName.SetText(mergeSaveSelectionName(f.saveName.Text, selectedName))
+}
+
+func (f *fileDialog) selectedEntryName() string {
+	if f.fileList != nil {
+		for _, u := range f.fileList.filtered {
+			if _, ok := f.selected[u.String()]; ok {
+				return u.Name()
+			}
+		}
+	}
+	for _, u := range f.selected {
+		return u.Name()
+	}
+	return ""
+}
+
+func mergeSaveSelectionName(current, selected string) string {
+	if strings.TrimSpace(selected) == "" {
+		return current
+	}
+	if strings.HasSuffix(current, "/") || strings.HasSuffix(current, "\\") {
+		return current + selected
+	}
+	return selected
+}
+
+func (f *fileDialog) saveTargetURI(input string) (fyne.URI, error) {
+	if f.dir == nil {
+		return nil, errors.New("no target directory selected")
+	}
+
+	name := strings.TrimSpace(input)
+	if name == "" {
+		return nil, errors.New("file name cannot be empty")
+	}
+
+	normalized := filepath.Clean(filepath.FromSlash(name))
+	if f.dir.Scheme() == "file" {
+		if filepath.IsAbs(normalized) {
+			return storage.NewFileURI(normalized), nil
+		}
+		return storage.NewFileURI(filepath.Join(f.dir.Path(), normalized)), nil
+	}
+
+	if strings.HasPrefix(name, "/") || strings.HasPrefix(name, "\\") {
+		return nil, errors.New("absolute paths are not supported for this location")
+	}
+
+	target := fyne.URI(f.dir)
+	parts := strings.Split(strings.ReplaceAll(name, "\\", "/"), "/")
+	for _, part := range parts {
+		switch part {
+		case "", ".":
+			continue
+		case "..":
+			parent, err := storage.Parent(target)
+			if err != nil {
+				return nil, err
+			}
+			target = parent
+		default:
+			child, err := storage.Child(target, part)
+			if err != nil {
+				return nil, err
+			}
+			target = child
+		}
+	}
+
+	return target, nil
 }
 
 func (f *fileDialog) loadPrefs() {
