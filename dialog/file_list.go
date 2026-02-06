@@ -327,11 +327,12 @@ type fileItem struct {
 	gridTextSize    float32
 	gridLabelQueued bool
 
-	currentPath string
-	currentView ViewLayout
-	currentZoom float32
-	lastClick   time.Time
-	loadTimer   *time.Timer
+	currentPath  string
+	currentView  ViewLayout
+	currentZoom  float32
+	currentIsDir bool
+	lastClick    time.Time
+	loadTimer    *time.Timer
 }
 
 func newFileItem(p FilePicker, zoom func() float32, itemSize func(view ViewLayout, zoom float32) fyne.Size) *fileItem {
@@ -376,6 +377,10 @@ func (i *fileItem) setURI(u fyne.URI, view ViewLayout) {
 	if u != nil {
 		path = u.Path()
 	}
+	isDir := false
+	if u != nil {
+		isDir, _ = storage.CanList(u)
+	}
 
 	// Fast path: avoid re-doing expensive work (icon/thumbnail resets, timers) during resize/layout churn.
 	// Grid/list virtualization can call UpdateItem repeatedly even when the underlying URI hasn't changed.
@@ -392,6 +397,7 @@ func (i *fileItem) setURI(u fyne.URI, view ViewLayout) {
 	i.currentPath = path
 	i.currentView = view
 	i.currentZoom = zoom
+	i.currentIsDir = isDir
 
 	if view == GridView {
 		i.label.Alignment = fyne.TextAlignCenter
@@ -401,7 +407,7 @@ func (i *fileItem) setURI(u fyne.URI, view ViewLayout) {
 
 		// Keep formatting stable while GridWrap stretches cells during resize.
 		truncWidth := i.gridBaseWidthForZoom(zoom)
-		name = formatGridFileName(name, truncWidth, i.label.TextStyle)
+		name = i.formatGridName(name, truncWidth, i.label.TextStyle)
 		i.gridTruncWidth = truncWidth
 		i.gridTextSize = theme.TextSize()
 	} else {
@@ -421,7 +427,7 @@ func (i *fileItem) setURI(u fyne.URI, view ViewLayout) {
 	i.thumbnail.FillMode = canvas.ImageFillContain
 
 	// Check for fancy folder details
-	if isDir, _ := storage.CanList(u); isDir {
+	if isDir {
 		if details, err := fancyfs.DetailsForFolder(u); err == nil && details != nil {
 			if details.BackgroundResource != nil {
 				i.customIcon.SetResource(details.BackgroundResource)
@@ -595,6 +601,24 @@ func formatGridFileName(name string, width float32, style fyne.TextStyle) string
 	return formatGridFileNameWithMeasure(name, width, measure)
 }
 
+func formatGridFolderName(name string, width float32, style fyne.TextStyle) string {
+	if name == "" || width <= 0 {
+		return name
+	}
+
+	// Safety margin to avoid clipping due to rounding differences between
+	// RenderedTextSize measurements and actual rendering.
+	// Keep a slightly larger buffer to avoid edge clipping during gradual resize.
+	width = max32(width-theme.Padding()*5, 0)
+
+	textSize := theme.TextSize()
+	measure := func(s string) float32 {
+		size, _ := fyne.CurrentApp().Driver().RenderedTextSize(s, textSize, style, nil)
+		return size.Width
+	}
+	return formatGridFolderNameWithMeasure(name, width, measure)
+}
+
 func formatGridFileNameWithMeasure(name string, width float32, measure func(string) float32) string {
 	if name == "" || width <= 0 {
 		return name
@@ -641,6 +665,45 @@ func formatGridFileNameWithMeasure(name string, width float32, measure func(stri
 
 	// Extremely narrow columns: show as much of the truncation suffix as possible.
 	truncSuffix := dots + extText
+	if lines, ok := wrapTextToLinesStrict(truncSuffix, width, maxLines, measure); ok {
+		return strings.Join(lines, "\n")
+	}
+
+	return wrapTextToLines(truncSuffix, width, maxLines, measure)
+}
+
+func formatGridFolderNameWithMeasure(name string, width float32, measure func(string) float32) string {
+	if name == "" || width <= 0 {
+		return name
+	}
+
+	const maxLines = 3
+
+	if measure(name) <= width {
+		return name
+	}
+
+	// Keep full folder names when they naturally fit in 3 lines.
+	if lines, ok := wrapTextToLinesStrict(name, width, maxLines, measure); ok {
+		return strings.Join(lines, "\n")
+	}
+
+	// Folder names have no extension semantics; preserve a short tail and
+	// progressively trim the prefix from right to left.
+	const dots = "..."
+	runes := []rune(name)
+	tailKeep := minInt(5, len(runes))
+	tail := string(runes[len(runes)-tailKeep:])
+
+	for prefixKeep := len(runes) - tailKeep; prefixKeep >= 0; prefixKeep-- {
+		prefix := string(runes[:prefixKeep])
+		candidate := prefix + dots + tail
+		if lines, ok := wrapTextToLinesStrict(candidate, width, maxLines, measure); ok {
+			return strings.Join(lines, "\n")
+		}
+	}
+
+	truncSuffix := dots + tail
 	if lines, ok := wrapTextToLinesStrict(truncSuffix, width, maxLines, measure); ok {
 		return strings.Join(lines, "\n")
 	}
@@ -865,13 +928,20 @@ func (i *fileItem) ensureGridLabel(width float32) {
 			return
 		}
 
-		newText := formatGridFileName(i.rawName, targetWidth, i.label.TextStyle)
+		newText := i.formatGridName(i.rawName, targetWidth, i.label.TextStyle)
 		i.gridTruncWidth = targetWidth
 		i.gridTextSize = curTextSize
 		if i.label.Text != newText {
 			i.label.SetText(newText)
 		}
 	})
+}
+
+func (i *fileItem) formatGridName(name string, width float32, style fyne.TextStyle) string {
+	if i != nil && i.currentIsDir {
+		return formatGridFolderName(name, width, style)
+	}
+	return formatGridFileName(name, width, style)
 }
 
 func (i *fileItem) gridBaseWidthForZoom(zoom float32) float32 {

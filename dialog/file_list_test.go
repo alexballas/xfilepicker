@@ -460,6 +460,39 @@ func TestFormatGridFileNameWithMeasure_NoExtensionProtectionForDotfiles(t *testi
 	}
 }
 
+func TestFormatGridFolderNameWithMeasure_TruncationKeepsTailAndDots(t *testing.T) {
+	measure := func(s string) float32 { return float32(utf8.RuneCountInString(s)) }
+
+	name := "averyverylongfoldername"
+	got := formatGridFolderNameWithMeasure(name, 6, measure)
+	compact := strings.ReplaceAll(got, "\n", "")
+
+	if compact == name {
+		t.Fatalf("expected folder name to be truncated, got %q", got)
+	}
+	if !strings.Contains(compact, "...") {
+		t.Fatalf("expected truncation marker, got %q", got)
+	}
+	if !strings.Contains(compact, "...rname") {
+		t.Fatalf("expected preserved 5-char tail with dots, got %q", got)
+	}
+}
+
+func TestFormatGridFolderNameWithMeasure_NoTruncationWhenFitsThreeLines(t *testing.T) {
+	measure := func(s string) float32 { return float32(utf8.RuneCountInString(s)) }
+
+	name := "foldernamealpha"
+	got := formatGridFolderNameWithMeasure(name, 5, measure)
+	compact := strings.ReplaceAll(got, "\n", "")
+
+	if compact != name {
+		t.Fatalf("expected full folder name to fit across 3 lines, got %q", got)
+	}
+	if strings.Contains(got, "...") {
+		t.Fatalf("did not expect truncation marker when full folder name fits, got %q", got)
+	}
+}
+
 func TestStableGridLabelWidth(t *testing.T) {
 	tests := []struct {
 		name   string
