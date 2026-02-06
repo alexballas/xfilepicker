@@ -275,11 +275,14 @@ func (f *fileList) refresh() {
 		target = f.list
 	}
 
-	if f.content.Content == nil || !isPadded(f.content.Content, f.overlay) {
+	inner := target
+	if f.picker.IsMultiSelect() {
 		f.overlay.content = target
-		f.content.Content = container.NewPadded(f.overlay)
-	} else {
-		f.overlay.content = target
+		inner = f.overlay
+	}
+
+	if f.content.Content == nil || !isPadded(f.content.Content, inner) {
+		f.content.Content = container.NewPadded(inner)
 	}
 
 	f.content.Refresh()
@@ -1136,6 +1139,10 @@ func gridColumnCount(width, itemWidth, padding float32) int {
 }
 
 func (f *fileList) onSelectionDrag(start, cur fyne.Position) {
+	if !f.picker.IsMultiSelect() {
+		return
+	}
+
 	// Mark as actively drag-selecting so MouseUp handlers on items don't override selection.
 	// This is important because on some platforms the MouseUp event can fire before DragEnd.
 	dragStart := !f.dragSelecting
@@ -1156,7 +1163,7 @@ func (f *fileList) onSelectionDrag(start, cur fyne.Position) {
 }
 
 func (f *fileList) updateDragSelection() {
-	if !f.dragSelecting || len(f.filtered) == 0 {
+	if !f.picker.IsMultiSelect() || !f.dragSelecting || len(f.filtered) == 0 {
 		return
 	}
 

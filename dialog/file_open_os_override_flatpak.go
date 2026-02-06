@@ -18,6 +18,7 @@ func fileOpenOSOverride(f *fileDialog) bool {
 	options := &filechooser.OpenFileOptions{
 		AcceptLabel: lang.L("Open"),
 		Multiple:    f.allowMultiple,
+		Directory:   f.isFolderMode(),
 	}
 	if f.dir != nil {
 		options.CurrentFolder = f.dir.Path()
@@ -27,17 +28,54 @@ func fileOpenOSOverride(f *fileDialog) bool {
 	windowHandle := windowHandleForPortal(f.parent)
 
 	go func() {
-		title := lang.L("Open") + " " + lang.L("File")
+		titleNoun := lang.L("File")
+		if f.isFolderMode() {
+			titleNoun = lang.L("Folder")
+		}
+		title := lang.L("Open") + " " + titleNoun
 		uris, err := filechooser.OpenFile(windowHandle, title, options)
 		if err != nil {
 			fyne.Do(func() {
-				f.callback(nil, err)
+				if f.isFolderMode() {
+					if f.folderCallback != nil {
+						f.folderCallback(nil, err)
+					}
+					return
+				}
+				if f.callback != nil {
+					f.callback(nil, err)
+				}
 			})
 			return
 		}
 		if len(uris) == 0 {
 			fyne.Do(func() {
-				f.callback(nil, nil)
+				if f.isFolderMode() {
+					if f.folderCallback != nil {
+						f.folderCallback(nil, nil)
+					}
+					return
+				}
+				if f.callback != nil {
+					f.callback(nil, nil)
+				}
+			})
+			return
+		}
+
+		if f.isFolderMode() {
+			uri, parseErr := storage.ParseURI(uris[0])
+			if parseErr != nil {
+				err = parseErr
+			}
+			var dir fyne.ListableURI
+			if err == nil {
+				dir, err = storage.ListerForURI(uri)
+			}
+			fyne.Do(func() {
+				if f.folderCallback != nil {
+					f.folderCallback(dir, err)
+				}
 			})
 			return
 		}
@@ -65,7 +103,9 @@ func fileOpenOSOverride(f *fileDialog) bool {
 		}
 
 		fyne.Do(func() {
-			f.callback(readers, err)
+			if f.callback != nil {
+				f.callback(readers, err)
+			}
 		})
 	}()
 

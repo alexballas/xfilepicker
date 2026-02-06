@@ -16,6 +16,13 @@ import (
 	"fyne.io/fyne/v2/widget"
 )
 
+type openDialogMode int
+
+const (
+	openDialogModeFile openDialogMode = iota
+	openDialogModeFolder
+)
+
 // ShowFileOpen creates and shows a file dialog allowing the user to choose
 // one or more files to open.
 func ShowFileOpen(callback func(readers []fyne.URIReadCloser, err error), parent fyne.Window, allowMultiple bool) {
@@ -25,24 +32,47 @@ func ShowFileOpen(callback func(readers []fyne.URIReadCloser, err error), parent
 
 // NewFileOpen creates a file dialog allowing the user to choose one or more files to open.
 func NewFileOpen(callback func(readers []fyne.URIReadCloser, err error), parent fyne.Window, allowMultiple bool) dialog.Dialog {
-	d := &fileDialog{
-		callback:      callback,
-		parent:        parent,
-		allowMultiple: allowMultiple,
-		selected:      make(map[string]fyne.URI),
-		dir:           effectiveStartingDir(),
-		view:          defaultView, // Will be loaded from prefs
-		zoomLevel:     defaultZoomLevelIndex,
-		anchor:        -1,
-	}
+	d := newDialogBase(parent)
+	d.mode = openDialogModeFile
+	d.callback = callback
+	d.allowMultiple = allowMultiple
 	d.loadPrefs()
 	return d
 }
 
+// ShowFolderOpen creates and shows a folder dialog allowing the user to choose a folder.
+func ShowFolderOpen(callback func(dir fyne.ListableURI, err error), parent fyne.Window) {
+	d := NewFolderOpen(callback, parent)
+	d.Show()
+}
+
+// NewFolderOpen creates a folder dialog allowing the user to choose a single folder.
+func NewFolderOpen(callback func(dir fyne.ListableURI, err error), parent fyne.Window) dialog.Dialog {
+	d := newDialogBase(parent)
+	d.mode = openDialogModeFolder
+	d.folderCallback = callback
+	d.allowMultiple = false
+	d.loadPrefs()
+	return d
+}
+
+func newDialogBase(parent fyne.Window) *fileDialog {
+	d := &fileDialog{
+		parent:    parent,
+		selected:  make(map[string]fyne.URI),
+		dir:       effectiveStartingDir(),
+		view:      defaultView, // Will be loaded from prefs
+		zoomLevel: defaultZoomLevelIndex,
+		anchor:    -1,
+	}
+	return d
+}
+
 type fileDialog struct {
-	callback func([]fyne.URIReadCloser, error)
-	parent   fyne.Window
-	dir      fyne.ListableURI
+	callback       func([]fyne.URIReadCloser, error)
+	folderCallback func(fyne.ListableURI, error)
+	parent         fyne.Window
+	dir            fyne.ListableURI
 
 	selected map[string]fyne.URI
 
@@ -75,6 +105,8 @@ type fileDialog struct {
 
 	zoomInBtn  *widget.Button
 	zoomOutBtn *widget.Button
+
+	mode openDialogMode
 }
 
 func (f *fileDialog) Show() {
@@ -207,6 +239,10 @@ func (f *fileDialog) updateZoomButtons() {
 
 func (f *fileDialog) IsMultiSelect() bool {
 	return f.allowMultiple
+}
+
+func (f *fileDialog) isFolderMode() bool {
+	return f.mode == openDialogModeFolder
 }
 
 func (f *fileDialog) ShowMenu(menu *fyne.Menu, pos fyne.Position, obj fyne.CanvasObject) {
@@ -415,10 +451,21 @@ func (f *fileDialog) typedKeyHook(ev *fyne.KeyEvent) {
 		return
 	}
 
-	if f.open == nil || f.open.Disabled() || len(f.selected) == 0 {
+	if f.isFolderMode() {
+		if len(f.selected) != 1 {
+			return
+		}
+		for _, u := range f.selected {
+			if l, err := storage.ListerForURI(u); err == nil {
+				f.SetLocation(l)
+			}
+		}
 		return
 	}
-	f.open.OnTapped()
+
+	if f.open != nil && !f.open.Disabled() && len(f.selected) > 0 {
+		f.open.OnTapped()
+	}
 }
 
 // Internal Logic
@@ -437,6 +484,22 @@ func (f *fileDialog) makeUI() fyne.CanvasObject {
 	f.fileName.Truncation = fyne.TextTruncateEllipsis
 
 	f.open = widget.NewButton(lang.L("Open"), func() {
+		if f.isFolderMode() {
+			target := f.dir
+			if len(f.selected) == 1 {
+				for _, u := range f.selected {
+					if l, err := storage.ListerForURI(u); err == nil {
+						target = l
+					}
+				}
+			}
+			f.Hide()
+			if f.folderCallback != nil {
+				f.folderCallback(target, nil)
+			}
+			return
+		}
+
 		if len(f.selected) == 1 {
 			var u fyne.URI
 			for _, val := range f.selected {
@@ -458,14 +521,24 @@ func (f *fileDialog) makeUI() fyne.CanvasObject {
 			}
 		}
 		f.Hide()
-		f.callback(readers, nil)
+		if f.callback != nil {
+			f.callback(readers, nil)
+		}
 	})
 	f.open.Importance = widget.HighImportance
 	f.open.Disable()
 
 	f.dismiss = widget.NewButton(lang.L("Cancel"), func() {
 		f.Hide()
-		f.callback(nil, nil)
+		if f.isFolderMode() {
+			if f.folderCallback != nil {
+				f.folderCallback(nil, nil)
+			}
+			return
+		}
+		if f.callback != nil {
+			f.callback(nil, nil)
+		}
 	})
 
 	footer := container.NewBorder(nil, nil, nil, container.NewHBox(f.dismiss, f.open), container.NewHScroll(f.fileName))
@@ -566,7 +639,9 @@ func (f *fileDialog) makeUI() fyne.CanvasObject {
 
 	// Top Bar with Title and Controls
 	titleText := lang.L("Open File")
-	if f.allowMultiple {
+	if f.isFolderMode() {
+		titleText = lang.L("Open Folder")
+	} else if f.allowMultiple {
 		titleText = lang.L("Open Files")
 	}
 	titleLabel := widget.NewLabelWithStyle(titleText, fyne.TextAlignLeading, fyne.TextStyle{Bold: true})
@@ -714,6 +789,10 @@ func (f *fileDialog) refreshDir(dir fyne.ListableURI) {
 			continue
 		}
 
+		if f.isFolderMode() {
+			continue
+		}
+
 		if f.extensionFilter == nil || f.extensionFilter.Matches(file) {
 			filteredFiles = append(filteredFiles, file)
 		}
@@ -741,6 +820,11 @@ func (f *fileDialog) updateFooter() {
 		}
 	}
 	f.fileName.SetText(strings.Join(names, ", "))
+
+	if f.isFolderMode() {
+		f.open.Enable()
+		return
+	}
 
 	// Logic: Only disable when multiselecting and folders are involved
 	if len(f.selected) == 0 {

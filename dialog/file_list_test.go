@@ -110,6 +110,26 @@ func (r *recordingPicker) IsMultiSelect() bool                                  
 func (r *recordingPicker) ShowMenu(menu *fyne.Menu, pos fyne.Position, obj fyne.CanvasObject) {}
 func (r *recordingPicker) DismissMenu()                                                       {}
 
+type singleRecordingPicker struct {
+	selectedIDs []int
+}
+
+func (r *singleRecordingPicker) SetLocation(dir fyne.ListableURI)                                   {}
+func (r *singleRecordingPicker) Refresh()                                                           {}
+func (r *singleRecordingPicker) SetView(view ViewLayout)                                            {}
+func (r *singleRecordingPicker) GetView() ViewLayout                                                { return ListView }
+func (r *singleRecordingPicker) Select(id int)                                                      {}
+func (r *singleRecordingPicker) SelectMultiple(ids []int)                                           { r.selectedIDs = append([]int(nil), ids...) }
+func (r *singleRecordingPicker) ToggleSelection(id int)                                             {}
+func (r *singleRecordingPicker) ExtendSelection(id int)                                             {}
+func (r *singleRecordingPicker) IsSelected(uri fyne.URI) bool                                       { return false }
+func (r *singleRecordingPicker) OpenSelection()                                                     {}
+func (r *singleRecordingPicker) CopyPath(uri fyne.URI)                                              {}
+func (r *singleRecordingPicker) SetFilter(filter storage.FileFilter)                                {}
+func (r *singleRecordingPicker) IsMultiSelect() bool                                                { return false }
+func (r *singleRecordingPicker) ShowMenu(menu *fyne.Menu, pos fyne.Position, obj fyne.CanvasObject) {}
+func (r *singleRecordingPicker) DismissMenu()                                                       {}
+
 type contextMenuPicker struct {
 	menu         *fyne.Menu
 	copiedURI    fyne.URI
@@ -203,6 +223,30 @@ func TestFileList_MarqueeSelection_StartAnchorStableAcrossScroll(t *testing.T) {
 	}
 	if !found0 {
 		t.Fatalf("Expected selection to still include item 0 after scrolling during drag, got %v", picker.selectedIDs)
+	}
+}
+
+func TestFileList_MarqueeSelection_DisabledForSingleSelect(t *testing.T) {
+	test.NewApp()
+
+	picker := &singleRecordingPicker{}
+	fl := newFileList(picker)
+	fl.setView(ListView)
+	fl.list.Resize(fyne.NewSize(400, 200))
+
+	var files []fyne.URI
+	for i := 0; i < 20; i++ {
+		files = append(files, storage.NewFileURI(filepath.Join("/tmp", fmt.Sprintf("file-%03d.txt", i))))
+	}
+	fl.setFiles(files)
+
+	fl.onSelectionDrag(fyne.NewPos(10, 10), fyne.NewPos(390, 180))
+
+	if len(picker.selectedIDs) != 0 {
+		t.Fatalf("expected no marquee selection in single-select mode, got %v", picker.selectedIDs)
+	}
+	if fl.dragSelecting {
+		t.Fatalf("expected dragSelecting to remain false in single-select mode")
 	}
 }
 
