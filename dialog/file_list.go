@@ -578,8 +578,8 @@ func formatGridFileName(name string, width float32, style fyne.TextStyle) string
 
 	// Safety margin to avoid clipping due to rounding differences between
 	// RenderedTextSize measurements and actual rendering.
-	// Increased to 4x Padding to be absolutely safe against clipping.
-	width = max32(width-theme.Padding()*4, 0)
+	// Keep a slightly larger buffer to avoid edge clipping during gradual resize.
+	width = max32(width-theme.Padding()*5, 0)
 
 	textSize := theme.TextSize()
 	measure := func(s string) float32 {
@@ -617,23 +617,36 @@ func formatGridFileNameWithMeasure(name string, width float32, measure func(stri
 	}
 
 	// If we need truncation, keep the extension visible and truncate the base
-	// from right-to-left, inserting "..." directly before the extension.
+	// from right-to-left while preserving a short basename tail:
+	// "prefix...tail.ext".
 	const dots = "..."
-	truncSuffix := dots + extText
 	baseRunes := []rune(base)
-	for keep := len(baseRunes) - 1; keep >= 0; keep-- {
-		candidate := string(baseRunes[:keep]) + truncSuffix
-		if lines, ok := wrapTextToLinesStrict(candidate, width, maxLines, measure); ok {
-			return strings.Join(lines, "\n")
+	const tailKeepRunes = 5
+	for tailKeep := minInt(tailKeepRunes, len(baseRunes)); tailKeep >= 0; tailKeep-- {
+		tail := string(baseRunes[len(baseRunes)-tailKeep:])
+		for prefixKeep := len(baseRunes) - tailKeep; prefixKeep >= 0; prefixKeep-- {
+			prefix := string(baseRunes[:prefixKeep])
+			candidate := prefix + dots + tail + ext
+			if lines, ok := wrapTextToLinesStrict(candidate, width, maxLines, measure); ok {
+				return strings.Join(lines, "\n")
+			}
 		}
 	}
 
 	// Extremely narrow columns: show as much of the truncation suffix as possible.
+	truncSuffix := dots + extText
 	if lines, ok := wrapTextToLinesStrict(truncSuffix, width, maxLines, measure); ok {
 		return strings.Join(lines, "\n")
 	}
 
 	return wrapTextToLines(truncSuffix, width, maxLines, measure)
+}
+
+func minInt(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
 }
 
 // wrapTextToLinesStrict wraps text across multiple lines and reports whether the
