@@ -584,6 +584,12 @@ func (f *fileDialog) makeUI() fyne.CanvasObject {
 				f.fileList.onResize()
 			}
 		},
+		externalSize: func() fyne.Size {
+			if f.parent == nil || f.parent.Canvas() == nil {
+				return fyne.Size{}
+			}
+			return f.parent.Canvas().Size()
+		},
 	}, container.NewBorder(globalHeader, footer, nil, nil, split))
 }
 
@@ -591,19 +597,35 @@ type resizeLayout struct {
 	internal fyne.Layout
 	onResize func()
 
-	lastSize  fyne.Size
-	lastFired time.Time
-	timer     *time.Timer
+	externalSize     func() fyne.Size
+	lastSize         fyne.Size
+	lastExternalSize fyne.Size
+	lastFired        time.Time
+	timer            *time.Timer
 }
 
 func (r *resizeLayout) Layout(objects []fyne.CanvasObject, size fyne.Size) {
 	r.internal.Layout(objects, size)
 	if r.onResize != nil {
+		internalChanged := abs32(size.Width-r.lastSize.Width) >= 0.5 || abs32(size.Height-r.lastSize.Height) >= 0.5
+		if internalChanged {
+			r.lastSize = size
+		}
+
+		externalChanged := false
+		if r.externalSize != nil {
+			external := r.externalSize()
+			externalChanged = abs32(external.Width-r.lastExternalSize.Width) >= 0.5 || abs32(external.Height-r.lastExternalSize.Height) >= 0.5
+			if externalChanged {
+				r.lastExternalSize = external
+			}
+		}
+
 		// Only react to real size changes (layouts can run for other reasons).
-		if abs32(size.Width-r.lastSize.Width) < 0.5 && abs32(size.Height-r.lastSize.Height) < 0.5 {
+		if !internalChanged && !externalChanged {
 			return
 		}
-		r.lastSize = size
+
 		r.scheduleResize()
 	}
 }
