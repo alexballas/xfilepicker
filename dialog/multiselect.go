@@ -801,6 +801,12 @@ func (f *fileDialog) refreshDir(dir fyne.ListableURI) {
 		return
 	}
 
+	for i, file := range files {
+		if repairedPath, ok := repairListedUNCChildPath(dir.Path(), file.Path(), file.Name()); ok {
+			files[i] = storage.NewFileURI(repairedPath)
+		}
+	}
+
 	// Filter hidden & extensions
 	var filteredFiles []fyne.URI
 	for _, file := range files {
