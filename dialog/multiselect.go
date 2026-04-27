@@ -197,6 +197,13 @@ func (f *fileDialog) Position() fyne.Position {
 // FilePicker Interface Implementation
 
 func (f *fileDialog) SetLocation(dir fyne.ListableURI) {
+	if dir == nil {
+		dir = effectiveStartingDir()
+		if dir == nil {
+			return
+		}
+	}
+
 	f.DismissMenu()
 	if f.searchEntry != nil {
 		f.searchEntry.SetText("")
@@ -790,6 +797,10 @@ func (r *resizeLayout) scheduleResize() {
 }
 
 func (f *fileDialog) refreshDir(dir fyne.ListableURI) {
+	if dir == nil {
+		return
+	}
+
 	f.dir = dir
 
 	if f.breadcrumb != nil {
