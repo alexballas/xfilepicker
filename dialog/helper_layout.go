@@ -1,8 +1,8 @@
 package dialog
 
 import (
-	"fyne.io/fyne/v2"
-	"fyne.io/fyne/v2/theme"
+	"github.com/alexballas/refyne/v2"
+	"github.com/alexballas/refyne/v2/theme"
 )
 
 func calculateItemSizeWithZoom(view ViewLayout, zoom float32) fyne.Size {

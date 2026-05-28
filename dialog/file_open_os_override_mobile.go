@@ -3,8 +3,8 @@
 package dialog
 
 import (
-	"fyne.io/fyne/v2"
-	fynedialog "fyne.io/fyne/v2/dialog"
+	"github.com/alexballas/refyne/v2"
+	fynedialog "github.com/alexballas/refyne/v2/dialog"
 )
 
 func fileOpenOSOverride(f *fileDialog) bool {

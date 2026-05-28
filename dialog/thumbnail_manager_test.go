@@ -9,8 +9,8 @@ import (
 	"testing"
 	"time"
 
-	"fyne.io/fyne/v2/canvas"
-	"fyne.io/fyne/v2/storage"
+	"github.com/alexballas/refyne/v2/canvas"
+	"github.com/alexballas/refyne/v2/storage"
 )
 
 func TestThumbnailManager_Video_AspectRatio(t *testing.T) {
