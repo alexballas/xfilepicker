@@ -101,6 +101,7 @@ func newFileList(p FilePicker) *fileList {
 		f.selectFromKeyboard(int(id))
 	}
 	f.grid.OnReturn = func(widget.GridWrapItemID) { f.confirmFromKeyboard() }
+	f.grid.OnKeyboardNavigated = f.navigateFromKeyboard
 
 	f.list = widget.NewList(
 		func() int { return len(f.filtered) },
@@ -121,6 +122,7 @@ func newFileList(p FilePicker) *fileList {
 		f.selectFromKeyboard(int(id))
 	}
 	f.list.OnReturn = func(widget.ListItemID) { f.confirmFromKeyboard() }
+	f.list.OnKeyboardNavigated = f.navigateFromKeyboard
 
 	f.content = container.NewScroll(nil)
 	return f
@@ -137,6 +139,33 @@ func (f *fileList) selectFromKeyboard(id int) {
 		return
 	}
 	f.picker.ToggleSelection(id)
+}
+
+// navigateFromKeyboard handles arrow-key navigation reported by the underlying
+// GridWrap/List. The widget has already moved its highlight cursor to id and
+// scrolled it into view; here we mirror the move into the picker's selection so
+// keyboard navigation matches mouse behaviour, taking the held modifiers into
+// account (Nautilus/GNOME Files style):
+//
+//   - plain arrow: select the newly focused item, replacing the selection,
+//     exactly as a single click would.
+//   - Shift+arrow: extend the selection range from the anchor to the newly
+//     focused item, enabling multi-selection.
+//   - Ctrl+arrow: move the focus cursor only, leaving the selection untouched.
+func (f *fileList) navigateFromKeyboard(id int, modifiers fyne.KeyModifier) {
+	if id < 0 || id >= len(f.filtered) {
+		return
+	}
+
+	switch {
+	case modifiers&fyne.KeyModifierShift != 0:
+		f.picker.ExtendSelection(id)
+	case modifiers&fyne.KeyModifierControl != 0:
+		// Focus-only move: the widget already repainted its highlight cursor, so
+		// there is nothing to do to the picker selection.
+	default:
+		f.picker.Select(id)
+	}
 }
 
 // clearWidgetSelection drops any selection the GridWrap/List is tracking
