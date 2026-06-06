@@ -1047,7 +1047,7 @@ func (i *fileItem) gridTruncationWidth(actualWidth float32) float32 {
 func (r *fileItemRenderer) MinSize() fyne.Size {
 	view := r.item.picker.GetView()
 	zoom := r.item.zoomScale()
-	// Return stable base size. Fyne's GridWrap.StretchItems handles stretching
+	// Return stable base size. refyne's GridWrap.StretchItems handles stretching
 	// at layout time to avoid feedback loops.
 	return calculateItemSizeWithZoom(view, zoom)
 }
@@ -1074,7 +1074,7 @@ func (f *fileList) getItemSize() fyne.Size {
 }
 
 func (f *fileList) itemSizeWithZoom(view ViewLayout, zoom float32) fyne.Size {
-	// Return stable base size. Fyne's GridWrap.StretchItems handles stretching at layout time.
+	// Return stable base size. refyne's GridWrap.StretchItems handles stretching at layout time.
 	return calculateItemSizeWithZoom(view, zoom)
 }
 

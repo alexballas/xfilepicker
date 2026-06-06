@@ -1,9 +1,9 @@
 # xfilepicker Translation Keys
 
-This extension uses standard Fyne localization keys where possible, along with custom keys for specific functionality. Use `github.com/alexballas/refyne/v2/lang` to provide translations for these strings.
+This extension uses standard refyne localization keys where possible, along with custom keys for specific functionality. Use `github.com/alexballas/refyne/v2/lang` to provide translations for these strings.
 
-## Standard Fyne Keys (Internal)
-These keys are typically handled by the Fyne toolkit if provided in your `translations/` directory.
+## Standard refyne Keys (Internal)
+These keys are typically handled by the refyne toolkit if provided in your `translations/` directory.
 
 - `Open`: The confirm button text.
 - `Cancel`: The dismiss button text.

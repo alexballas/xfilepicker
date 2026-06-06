@@ -793,7 +793,7 @@ func (r *resizeLayout) MinSize(objects []fyne.CanvasObject) fyne.Size {
 
 func (r *resizeLayout) scheduleResize() {
 	// Defer the resize callback to avoid modifying the UI during layout
-	// which can cause panics in Fyne driver. Coalesce bursts during window resize.
+	// which can cause panics in refyne driver. Coalesce bursts during window resize.
 	const minInterval = 60 * time.Millisecond
 
 	if r.onResize == nil {

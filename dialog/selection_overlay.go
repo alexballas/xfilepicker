@@ -105,9 +105,9 @@ func (s *selectionOverlay) setStartPos(start fyne.Position) {
 }
 
 // Ensure overlay passes Tapped events to children if needed, but Draggable usually coexists well.
-// If we need to pass Tapped, we rely on Fyne's event bubbling.
+// If we need to pass Tapped, we rely on refyne's event bubbling.
 // However, since we wrap the content, the content is a child.
-// Fyne widgets don't automatically forward events to children if the parent handles them?
+// refyne widgets don't automatically forward events to children if the parent handles them?
 // Actually, `Dragged` is distinct.
 // But if `selectionOverlay` is the top-level widget, does it block interaction?
 // `BaseWidget` doesn't block by default unless it implements the interface.
@@ -120,7 +120,7 @@ func (s *selectionOverlay) setStartPos(start fyne.Position) {
 // The issue might be that `s.content` is managed by the renderer.
 // The `selectionOverlay` widget receives the events because it "is" the container.
 // If we want the children to receive Taps, we need to make sure the overlay doesn't swallow them.
-// By NOT implementing Tapped, we allow Fyne to find the child under the cursor that Implement Tapped.
+// By NOT implementing Tapped, we allow refyne to find the child under the cursor that Implement Tapped.
 
 // Important: If we wrap `container.NewScroll`, the scroll might handle Drag.
 // If the Scroll container handles Drag (for scrolling), it might conflict with our selection drag.

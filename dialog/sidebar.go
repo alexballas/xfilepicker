@@ -169,7 +169,7 @@ func (s *sidebar) loadFavorites() {
 		if err == nil {
 			if l, err := storage.ListerForURI(uri); err == nil {
 				icon := s.getFavoritesIcon(name)
-				// Override with fancyfs if possible (matches Fyne's theme support but better)
+				// Override with fancyfs if possible (matches refyne's theme support but better)
 				if details, err := fancyfs.DetailsForFolder(uri); err == nil && details != nil && details.BackgroundResource != nil {
 					icon = details.BackgroundResource
 				}

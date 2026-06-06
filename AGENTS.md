@@ -1,7 +1,7 @@
 # AGENTS.md
 
 ## Project Overview
-`xfilepicker` is an enhanced file selection dialog for the [Fyne](https://fyne.io) toolkit. It acts as a drop-in replacement or upgrade for the standard Fyne file dialog, focusing on performance, media handling (thumbnails), and advanced user interaction (multi-select, keyboard navigation).
+`xfilepicker` is an enhanced file selection dialog for the [refyne](https://github.com/alexballas/refyne) toolkit. It acts as a drop-in replacement or upgrade for the standard refyne file dialog, focusing on performance, media handling (thumbnails), and advanced user interaction (multi-select, keyboard navigation).
 
 ## Key Architecture
 
@@ -26,7 +26,7 @@ The primary logic resides in the `dialog` package.
 ## Development Guidelines
 
 ### 1. UI/UX
-- **Fyne Idioms**: Use standard Fyne widgets (`widget.Label`, `widget.Icon`) where possible, but `xfilepicker` often uses custom rendering for performance in lists/grids.
+- **refyne Idioms**: Use standard refyne widgets (`widget.Label`, `widget.Icon`) where possible, but `xfilepicker` often uses custom rendering for performance in lists/grids.
 - **Theme**: Respect `theme.Current()` changes.
 
 ### 2. Testing

@@ -5,7 +5,7 @@ import (
 	"strings"
 )
 
-// repairListedUNCChildPath restores the leading double slash that Fyne's file
+// repairListedUNCChildPath restores the leading double slash that refyne's file
 // repository can lose when listing children of a Windows UNC directory.
 func repairListedUNCChildPath(dirPath, childPath, childName string) (string, bool) {
 	dirPath = filepath.ToSlash(dirPath)

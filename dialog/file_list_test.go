@@ -411,7 +411,7 @@ func TestFileList_GridView_StretchesCellsToFillWidth(t *testing.T) {
 		}
 		lastCols = cols
 
-		// Note: stretching to fill width is now handled by Fyne's GridWrap.StretchItems
+		// Note: stretching to fill width is now handled by refyne's GridWrap.StretchItems
 		// at layout time, so we don't verify item sizes here.
 	}
 

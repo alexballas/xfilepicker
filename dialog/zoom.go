@@ -67,7 +67,7 @@ func (z *zoomScrollOverlay) Scrolled(e *fyne.ScrollEvent) {
 		return
 	}
 
-	// Fyne scroll deltas are scaled; on typical mouse wheels, DY is ~40 per notch.
+	// refyne scroll deltas are scaled; on typical mouse wheels, DY is ~40 per notch.
 	// Accumulate so touchpads don't zoom too quickly.
 	const notch = float32(40)
 

@@ -37,7 +37,7 @@ func TestTypeToSearch(t *testing.T) {
 		fd.typedRuneHook(r)
 	})
 	// Simulate typing on canvas
-	// Fyne's test.Type types into the focused object.
+	// refyne's test.Type types into the focused object.
 	// If nothing focused?
 	// We can manually invoke the hook for unit testing logic.
 	fd.typedRuneHook('a')
@@ -76,7 +76,7 @@ func TestTypeToSearch(t *testing.T) {
 	searchEntry.SetText("")
 	// Type 'x' into overlay
 	overlayEntry.TypedRune('x')
-	// Hook is called by Fyne loop usually. We simulate hook call.
+	// Hook is called by refyne loop usually. We simulate hook call.
 	// IMPORTANT: In reality, if overlayEntry handles it, does hook run?
 	// If hook runs, it must check focused.
 	fd.typedRuneHook('x')

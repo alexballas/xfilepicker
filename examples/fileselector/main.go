@@ -18,7 +18,7 @@ func main() {
 	w := a.NewWindow("Multi-Select File Picker Example")
 
 	// Example: Set custom FFmpeg path programmatically
-	// This will also be saved to Fyne preferences automatically
+	// This will also be saved to refyne preferences automatically
 	dialog.SetFFmpegPath("ffmpeg")
 	label := widget.NewLabel("No files selected")
 
