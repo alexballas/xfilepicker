@@ -115,21 +115,35 @@ type singleRecordingPicker struct {
 	selectedIDs []int
 }
 
-func (r *singleRecordingPicker) SetLocation(dir fyne.ListableURI)                                   {}
-func (r *singleRecordingPicker) Refresh()                                                           {}
-func (r *singleRecordingPicker) SetView(view ViewLayout)                                            {}
-func (r *singleRecordingPicker) GetView() ViewLayout                                                { return ListView }
-func (r *singleRecordingPicker) Select(id int)                                                      {}
-func (r *singleRecordingPicker) SelectMultiple(ids []int)                                           { r.selectedIDs = append([]int(nil), ids...) }
-func (r *singleRecordingPicker) ToggleSelection(id int)                                             {}
-func (r *singleRecordingPicker) ExtendSelection(id int)                                             {}
-func (r *singleRecordingPicker) IsSelected(uri fyne.URI) bool                                       { return false }
-func (r *singleRecordingPicker) OpenSelection()                                                     {}
-func (r *singleRecordingPicker) CopyPath(uri fyne.URI)                                              {}
-func (r *singleRecordingPicker) SetFilter(filter storage.FileFilter)                                {}
-func (r *singleRecordingPicker) IsMultiSelect() bool                                                { return false }
+func (r *singleRecordingPicker) SetLocation(dir fyne.ListableURI) {}
+
+func (r *singleRecordingPicker) Refresh() {}
+
+func (r *singleRecordingPicker) SetView(view ViewLayout) {}
+
+func (r *singleRecordingPicker) GetView() ViewLayout { return ListView }
+
+func (r *singleRecordingPicker) Select(id int) {}
+
+func (r *singleRecordingPicker) SelectMultiple(ids []int) { r.selectedIDs = append([]int(nil), ids...) }
+
+func (r *singleRecordingPicker) ToggleSelection(id int) {}
+
+func (r *singleRecordingPicker) ExtendSelection(id int) {}
+
+func (r *singleRecordingPicker) IsSelected(uri fyne.URI) bool { return false }
+
+func (r *singleRecordingPicker) OpenSelection() {}
+
+func (r *singleRecordingPicker) CopyPath(uri fyne.URI) {}
+
+func (r *singleRecordingPicker) SetFilter(filter storage.FileFilter) {}
+
+func (r *singleRecordingPicker) IsMultiSelect() bool { return false }
+
 func (r *singleRecordingPicker) ShowMenu(menu *fyne.Menu, pos fyne.Position, obj fyne.CanvasObject) {}
-func (r *singleRecordingPicker) DismissMenu()                                                       {}
+
+func (r *singleRecordingPicker) DismissMenu() {}
 
 type contextMenuPicker struct {
 	menu         *fyne.Menu

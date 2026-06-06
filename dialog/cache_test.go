@@ -13,7 +13,7 @@ func TestThumbnailManager_GenerateCacheKey(t *testing.T) {
 	// Create a dummy file
 	tmpDir := t.TempDir()
 	filePath := filepath.Join(tmpDir, "test.mp4")
-	_ = os.WriteFile(filePath, make([]byte, 100*1024), 0644)
+	_ = os.WriteFile(filePath, make([]byte, 100*1024), 0o644)
 
 	key1, err := tm.generateCacheKey(filePath)
 	if err != nil {
@@ -45,7 +45,7 @@ func TestThumbnailManager_GenerateCacheKey(t *testing.T) {
 	}
 
 	// Modify content (within first 32KB) -> different key
-	f, _ := os.OpenFile(filePath, os.O_WRONLY, 0644)
+	f, _ := os.OpenFile(filePath, os.O_WRONLY, 0o644)
 	f.Write([]byte("change"))
 	f.Close()
 	_ = os.Chtimes(filePath, now, now) // Reset time to isolate content change
@@ -78,7 +78,7 @@ func TestThumbnailManager_CleanupCache(t *testing.T) {
 	// Create 10 files
 	for i := 0; i < 10; i++ {
 		path := filepath.Join(tmpDir, string(rune('a'+i))+".jpg")
-		_ = os.WriteFile(path, []byte("fake image data"), 0644)
+		_ = os.WriteFile(path, []byte("fake image data"), 0o644)
 		// Set distinct modification times (oldest first)
 		mtime := time.Now().Add(time.Duration(i-100) * time.Minute)
 		_ = os.Chtimes(path, mtime, mtime)

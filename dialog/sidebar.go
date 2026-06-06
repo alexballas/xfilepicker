@@ -9,11 +9,11 @@ import (
 
 	"github.com/alexballas/refyne/v2"
 	"github.com/alexballas/refyne/v2/container"
+	"github.com/alexballas/refyne/v2/fancyfs"
 	"github.com/alexballas/refyne/v2/lang"
 	"github.com/alexballas/refyne/v2/storage"
 	"github.com/alexballas/refyne/v2/theme"
 	"github.com/alexballas/refyne/v2/widget"
-	"github.com/alexballas/refyne/v2/fancyfs"
 )
 
 type sidebar struct {

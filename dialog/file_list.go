@@ -429,7 +429,6 @@ func newFileItem(p FilePicker, zoom func() float32, itemSize func(view ViewLayou
 	item.label.Truncation = fyne.TextTruncateEllipsis
 	item.ExtendBaseWidget(item)
 	return item
-
 }
 
 func (i *fileItem) CreateRenderer() fyne.WidgetRenderer {
@@ -603,6 +602,7 @@ var _ desktop.Mouseable = (*fileItem)(nil)
 func (i *fileItem) MouseDown(e *desktop.MouseEvent) {
 	i.picker.DismissMenu()
 }
+
 func (i *fileItem) MouseUp(e *desktop.MouseEvent) {
 	if e.Button == desktop.MouseButtonSecondary {
 		if !i.picker.IsMultiSelect() {

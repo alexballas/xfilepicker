@@ -65,7 +65,7 @@ func GetThumbnailManager() *ThumbnailManager {
 		// Setup persistent cache
 		if userCache, err := os.UserCacheDir(); err == nil {
 			instance.cacheDir = filepath.Join(userCache, "xfilepicker")
-			_ = os.MkdirAll(instance.cacheDir, 0755)
+			_ = os.MkdirAll(instance.cacheDir, 0o755)
 			go instance.cleanupCache()
 		}
 
@@ -274,7 +274,6 @@ func loadImage(path string) (image.Image, error) {
 }
 
 func (m *ThumbnailManager) generateVideoThumbnail(path string) (image.Image, error) {
-
 	// 1. Get duration
 	duration, err := m.getVideoDuration(path)
 	if err != nil {
@@ -340,6 +339,7 @@ func (m *ThumbnailManager) getVideoDuration(path string) (time.Duration, error) 
 
 	return duration, nil
 }
+
 func isSupportedImage(ext string) bool {
 	return ext == ".jpg" || ext == ".jpeg" || ext == ".png"
 }
