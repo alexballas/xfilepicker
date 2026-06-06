@@ -614,3 +614,56 @@ func TestFileList_ChangingFolderClearsWidgetSelection(t *testing.T) {
 		t.Fatalf("expected Space after folder change to reach the picker once, got %d", picker.toggleCalls)
 	}
 }
+
+func TestFileDialog_MarqueeSelectionFocusesListForKeyboard(t *testing.T) {
+	a := test.NewApp()
+	defer a.Quit()
+
+	w := a.NewWindow("Test")
+	root := t.TempDir()
+	for i := 0; i < 6; i++ {
+		name := fmt.Sprintf("file-%02d.txt", i)
+		if err := os.WriteFile(filepath.Join(root, name), []byte("x"), 0o644); err != nil {
+			t.Fatalf("write failed: %v", err)
+		}
+	}
+
+	d := NewFileOpen(func([]fyne.URIReadCloser, error) {}, w, true).(*fileDialog)
+	// Render the dialog UI so the list is part of the canvas focus tree.
+	w.SetContent(d.makeUI())
+	d.SetView(ListView)
+	d.fileList.list.Resize(fyne.NewSize(400, 400))
+	d.fileList.overlay.Resize(fyne.NewSize(400, 400))
+
+	lister, err := storage.ListerForURI(storage.NewFileURI(root))
+	if err != nil {
+		t.Fatalf("lister failed: %v", err)
+	}
+	d.refreshDir(lister)
+
+	// Marquee-drag across the top rows (kept clear of the auto-scroll edge zone).
+	d.fileList.onSelectionDrag(fyne.NewPos(10, 5), fyne.NewPos(390, 150))
+	d.fileList.onSelectionEnd()
+
+	// Find the last (highest-index) selected item; the cursor should rest there.
+	lastIdx := -1
+	for i, u := range d.fileList.filtered {
+		if d.IsSelected(u) {
+			lastIdx = i
+		}
+	}
+	if lastIdx < 0 {
+		t.Fatalf("expected the marquee drag to select files")
+	}
+
+	if got := w.Canvas().Focused(); got != d.fileList.list {
+		t.Fatalf("expected the file list to receive keyboard focus after a marquee drag, got %T", got)
+	}
+
+	// Space acts on the highlighted item; it must be the last marquee-selected
+	// row, so toggling clears it.
+	d.fileList.list.TypedKey(&fyne.KeyEvent{Name: fyne.KeySpace})
+	if d.IsSelected(d.fileList.filtered[lastIdx]) {
+		t.Fatalf("expected the keyboard cursor to be parked on the last marquee-selected item")
+	}
+}

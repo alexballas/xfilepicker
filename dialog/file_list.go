@@ -1418,10 +1418,29 @@ func (f *fileList) updateDragSelection() {
 
 func (f *fileList) onSelectionEnd() {
 	f.stopAutoScroll()
+
+	// Hand keyboard focus to the list once the marquee is released, so the
+	// keyboard takes over without an explicit Tab (mirrors a pointer click; see
+	// fileItem.MouseUp). Park the cursor on the last item the marquee covered,
+	// which matches the selection anchor SelectMultiple sets. ids are appended in
+	// ascending order, so the final entry is the anchor.
+	focusID := -1
+	if n := len(f.lastDragSelection); n > 0 {
+		focusID = f.lastDragSelection[n-1]
+	}
+
 	f.lastDragSelection = nil
 	f.dragSelecting = false
 	f.lastDragTime = time.Now()
 	f.overlay.setDebugRects(nil)
+
+	// Only take focus when the marquee actually covered something; an empty drag
+	// over blank space shouldn't steal focus.
+	if focusID >= 0 {
+		if fd, ok := f.picker.(*fileDialog); ok {
+			fd.focusFileList(focusID)
+		}
+	}
 }
 
 func (f *fileList) currentScrollOffset() float32 {
