@@ -169,6 +169,30 @@ func (c *contextMenuPicker) ShowMenu(menu *fyne.Menu, pos fyne.Position, obj fyn
 }
 func (c *contextMenuPicker) DismissMenu() { c.dismissCalls++ }
 
+// gridRecordingPicker reports GridView (so grid items get a real, non-zero
+// MinSize and ColumnCount works) and multi-select (so marquee selection runs),
+// recording the ids handed to SelectMultiple.
+type gridRecordingPicker struct {
+	selectedIDs []int
+}
+
+func (r *gridRecordingPicker) SetLocation(dir fyne.ListableURI)    {}
+func (r *gridRecordingPicker) Refresh()                            {}
+func (r *gridRecordingPicker) SetView(view ViewLayout)             {}
+func (r *gridRecordingPicker) GetView() ViewLayout                 { return GridView }
+func (r *gridRecordingPicker) Select(id int)                       {}
+func (r *gridRecordingPicker) SelectMultiple(ids []int)            { r.selectedIDs = append([]int(nil), ids...) }
+func (r *gridRecordingPicker) ToggleSelection(id int)              {}
+func (r *gridRecordingPicker) ExtendSelection(id int)              {}
+func (r *gridRecordingPicker) IsSelected(uri fyne.URI) bool        { return false }
+func (r *gridRecordingPicker) OpenSelection()                      {}
+func (r *gridRecordingPicker) CopyPath(uri fyne.URI)               {}
+func (r *gridRecordingPicker) SetFilter(filter storage.FileFilter) {}
+func (r *gridRecordingPicker) IsMultiSelect() bool                 { return true }
+func (r *gridRecordingPicker) ShowMenu(menu *fyne.Menu, pos fyne.Position, obj fyne.CanvasObject) {
+}
+func (r *gridRecordingPicker) DismissMenu() {}
+
 func TestFileItem_ContextMenu_CopyPath(t *testing.T) {
 	test.NewApp()
 
@@ -262,6 +286,90 @@ func TestFileList_MarqueeSelection_DisabledForSingleSelect(t *testing.T) {
 	}
 	if fl.dragSelecting {
 		t.Fatalf("expected dragSelecting to remain false in single-select mode")
+	}
+}
+
+func TestFileList_MarqueeSelection_GridHorizontalUsesStretchedCellWidth(t *testing.T) {
+	test.NewApp()
+
+	picker := &gridRecordingPicker{}
+	fl := newFileList(picker)
+	fl.setView(GridView)
+
+	var files []fyne.URI
+	for i := 0; i < 50; i++ {
+		files = append(files, storage.NewFileURI(filepath.Join("/tmp", fmt.Sprintf("file-%03d.txt", i))))
+	}
+	fl.setFiles(files)
+
+	// Lay out the grid through a real window so ColumnCount and StretchItems
+	// reflect a concrete viewport, then resize to a mid-band width (not a column
+	// threshold) so cells stretch noticeably past their base width.
+	win := test.NewTempWindow(t, fl.grid)
+	win.Resize(fyne.NewSize(560, 400))
+	fl.onResize()
+
+	pad := fl.grid.Theme().Size(theme.SizeNamePadding)
+	base := calculateItemSizeWithZoom(GridView, fl.getZoom())
+	cols := fl.grid.ColumnCount()
+	if cols < 2 {
+		t.Fatalf("expected multiple columns for the test, got %d", cols)
+	}
+
+	viewportWidth := fl.grid.Size().Width
+	stretched := gridStretchedCellWidth(base.Width, viewportWidth, pad, cols)
+	if stretched <= base.Width+1 {
+		t.Fatalf("expected cells to stretch past base width (base %.2f, stretched %.2f, viewport %.2f, cols %d)",
+			base.Width, stretched, viewportWidth, cols)
+	}
+
+	stepX := stretched + pad
+
+	// Drag a thin vertical marquee centred on the last column of the first row.
+	// At the stretched stride this lands squarely on item (cols-1). Using the
+	// unstretched base stride (the bug), the computed cells sit left of where the
+	// grid drew them, so this strip falls to the right of every computed cell and
+	// selects nothing — the offset that grows toward the right edge after resize.
+	lastCol := cols - 1
+	cellCenterX := float32(lastCol)*stepX + stretched/2
+
+	start := fyne.NewPos(cellCenterX-2, 2)
+	cur := fyne.NewPos(cellCenterX+2, base.Height-2)
+
+	fl.onSelectionDrag(start, cur)
+
+	containsID := func(ids []int, want int) bool {
+		for _, id := range ids {
+			if id == want {
+				return true
+			}
+		}
+		return false
+	}
+
+	if !containsID(picker.selectedIDs, lastCol) {
+		t.Fatalf("expected marquee over stretched last column to select item %d, got %v (stepX %.2f, stretched %.2f)",
+			lastCol, picker.selectedIDs, stepX, stretched)
+	}
+	// A thin strip must hit a single cell, not bleed into the neighbour.
+	if containsID(picker.selectedIDs, lastCol-1) {
+		t.Fatalf("thin marquee over column %d unexpectedly also selected column %d: %v",
+			lastCol, lastCol-1, picker.selectedIDs)
+	}
+
+	// The cell's right edge must also follow the stretched width: a strip in the
+	// portion of the cell past its base width (but inside the rendered cell) still
+	// has to register. With the right edge pinned to the base width that region is
+	// a dead zone where the marquee visibly overlaps but nothing selects.
+	fl.onSelectionEnd()
+	picker.selectedIDs = nil
+
+	rightX := float32(lastCol)*stepX + (base.Width+stretched)/2
+	fl.onSelectionDrag(fyne.NewPos(rightX-2, 2), fyne.NewPos(rightX+2, base.Height-2))
+
+	if !containsID(picker.selectedIDs, lastCol) {
+		t.Fatalf("expected marquee in the stretched right portion of column %d to select item %d, got %v (rightX %.2f, base %.2f, stretched %.2f)",
+			lastCol, lastCol, picker.selectedIDs, rightX, base.Width, stretched)
 	}
 }
 

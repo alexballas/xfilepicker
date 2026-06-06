@@ -1290,6 +1290,23 @@ func gridColumnCount(width, itemWidth, padding float32) int {
 	return cols
 }
 
+// gridStretchedCellWidth returns the on-screen width of a grid cell, accounting
+// for GridWrap.StretchItems. When stretching is enabled the grid widens each cell
+// so the columns fill the viewport evenly with no dead space on the right. This
+// mirrors the formula in refyne's gridWrapLayout.updateGrid so marquee
+// hit-testing uses the same cell stride the grid actually rendered; otherwise
+// horizontal selection drifts once the window is resized wide enough to stretch.
+func gridStretchedCellWidth(baseWidth, viewportWidth, padding float32, cols int) float32 {
+	if cols < 1 || viewportWidth <= 0 {
+		return baseWidth
+	}
+	stretched := (viewportWidth - float32(cols-1)*padding) / float32(cols)
+	if stretched > baseWidth {
+		return stretched
+	}
+	return baseWidth
+}
+
 func (f *fileList) onSelectionDrag(start, cur fyne.Position) {
 	if !f.picker.IsMultiSelect() {
 		return
@@ -1341,7 +1358,16 @@ func (f *fileList) updateDragSelection() {
 			cols = 1
 		}
 
-		stepX := itemSize.Width + pad
+		// GridWrap.StretchItems widens cells to fill the viewport once the window
+		// is wide enough, so the rendered cell stride is larger than the base item
+		// width. Hit-test against the same stretched width the grid drew with, or
+		// the accumulated per-column error offsets horizontal selection.
+		cellWidth := itemSize.Width
+		if f.grid.StretchItems {
+			cellWidth = gridStretchedCellWidth(itemSize.Width, f.grid.Size().Width, pad, cols)
+		}
+
+		stepX := cellWidth + pad
 		stepY := itemSize.Height + pad
 
 		// Robust Logic:
@@ -1379,7 +1405,7 @@ func (f *fileList) updateDragSelection() {
 
 				x1 := float32(col) * stepX
 				y1 := float32(row) * stepY
-				x2 := x1 + itemSize.Width
+				x2 := x1 + cellWidth
 				y2 := y1 + itemSize.Height
 
 				if x1 < br.X && x2 > tl.X && y1 < br.Y && y2 > tl.Y {
