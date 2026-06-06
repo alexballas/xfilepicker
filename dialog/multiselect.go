@@ -485,16 +485,23 @@ func (f *fileDialog) typedKeyHook(ev *fyne.KeyEvent) {
 		return
 	}
 
-	// Only trigger Open when focus is on the file list (or nothing focused).
-	// We must not interfere with dialogs/forms (e.g. New Folder) or text inputs.
-	focused := f.parent.Canvas().Focused()
-	allowed := focused == nil
-	if !allowed && f.fileList != nil {
-		if focused == f.fileList.list || focused == f.fileList.grid {
-			allowed = true
-		}
+	// This canvas-level hook only fires when nothing is focused. When the file
+	// list holds focus the key is delivered to it directly and routed back via
+	// OnReturn instead. Don't interfere with focused text inputs/forms (e.g. the
+	// New Folder or rename entry).
+	if f.parent.Canvas().Focused() != nil {
+		return
 	}
-	if !allowed {
+
+	f.confirmFromKeyboard()
+}
+
+// confirmFromKeyboard emulates a press of the dialog's confirm (OK) button in
+// response to Return/Enter. In folder mode a single selected directory is
+// navigated into; otherwise the current selection is opened (or, in save mode,
+// the typed name is used).
+func (f *fileDialog) confirmFromKeyboard() {
+	if f.win == nil {
 		return
 	}
 
@@ -513,6 +520,31 @@ func (f *fileDialog) typedKeyHook(ev *fyne.KeyEvent) {
 	if f.open != nil && !f.open.Disabled() && (f.isSaveMode() || len(f.selected) > 0) {
 		f.open.OnTapped()
 	}
+}
+
+// focusFileList gives keyboard focus to the active file list view and moves its
+// highlight cursor to id, so a pointer selection transitions seamlessly into
+// keyboard navigation without an explicit Tab.
+func (f *fileDialog) focusFileList(id int) {
+	if f.fileList == nil {
+		return
+	}
+	if c := f.focusCanvas(); c != nil {
+		f.fileList.focusForKeyboardNav(c, id)
+	}
+}
+
+// focusCanvas returns the canvas that owns the dialog's widgets. The modal
+// popup is created on the parent canvas, so the two reference the same object;
+// we prefer the popup's reference and fall back to the parent.
+func (f *fileDialog) focusCanvas() fyne.Canvas {
+	if f.win != nil {
+		return f.win.Canvas
+	}
+	if f.parent != nil {
+		return f.parent.Canvas()
+	}
+	return nil
 }
 
 // Internal Logic

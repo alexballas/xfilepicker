@@ -10,11 +10,11 @@ import (
 	"github.com/alexballas/refyne/v2/canvas"
 	"github.com/alexballas/refyne/v2/container"
 	"github.com/alexballas/refyne/v2/driver/desktop"
+	"github.com/alexballas/refyne/v2/fancyfs"
 	"github.com/alexballas/refyne/v2/lang"
 	"github.com/alexballas/refyne/v2/storage"
 	"github.com/alexballas/refyne/v2/theme"
 	"github.com/alexballas/refyne/v2/widget"
-	"github.com/alexballas/refyne/v2/fancyfs"
 )
 
 type fileList struct {
@@ -92,6 +92,15 @@ func newFileList(p FilePicker) *fileList {
 		},
 	)
 	f.grid.StretchItems = true
+	f.grid.OnSelected = func(id widget.GridWrapItemID) {
+		// Space on the keyboard-focused item triggers the GridWrap's own
+		// single-item selection. Discard that internal highlight and route the
+		// intent through the picker so keyboard and mouse share one selection
+		// state (and one highlight, drawn by fileItem). See selectFromKeyboard.
+		f.grid.UnselectAll()
+		f.selectFromKeyboard(int(id))
+	}
+	f.grid.OnReturn = func(widget.GridWrapItemID) { f.confirmFromKeyboard() }
 
 	f.list = widget.NewList(
 		func() int { return len(f.filtered) },
@@ -105,9 +114,73 @@ func newFileList(p FilePicker) *fileList {
 			}
 		},
 	)
+	f.list.OnSelected = func(id widget.ListItemID) {
+		// See the GridWrap OnSelected above: keep keyboard selection unified
+		// with the picker and avoid a stale widget-owned highlight.
+		f.list.UnselectAll()
+		f.selectFromKeyboard(int(id))
+	}
+	f.list.OnReturn = func(widget.ListItemID) { f.confirmFromKeyboard() }
 
 	f.content = container.NewScroll(nil)
 	return f
+}
+
+// selectFromKeyboard routes a selection originating from the underlying
+// GridWrap/List keyboard handling (Space on the focused item) through the
+// picker, so keyboard and mouse share a single selection state. In
+// multi-select mode Space toggles the focused item; otherwise it replaces the
+// current selection (ToggleSelection falls back to Select when not
+// multi-selecting).
+func (f *fileList) selectFromKeyboard(id int) {
+	if id < 0 || id >= len(f.filtered) {
+		return
+	}
+	f.picker.ToggleSelection(id)
+}
+
+// clearWidgetSelection drops any selection the GridWrap/List is tracking
+// internally. The picker is the single source of truth for selection, so we
+// must not leave a stale widget highlight behind when the contents change
+// (e.g. when navigating into a different folder).
+func (f *fileList) clearWidgetSelection() {
+	if f.grid != nil {
+		f.grid.UnselectAll()
+	}
+	if f.list != nil {
+		f.list.UnselectAll()
+	}
+}
+
+// confirmFromKeyboard handles Return/Enter pressed while the focused list/grid
+// holds keyboard focus, emulating the dialog's confirm (OK) button.
+func (f *fileList) confirmFromKeyboard() {
+	if fd, ok := f.picker.(*fileDialog); ok {
+		fd.confirmFromKeyboard()
+	}
+}
+
+// focusForKeyboardNav makes the active list/grid the keyboard navigation target
+// and moves its highlight cursor to id. It is called when a file is chosen with
+// the pointer so that the keyboard takes over from the clicked item without an
+// explicit Tab, and without leaving a stray highlight on a different row.
+func (f *fileList) focusForKeyboardNav(c fyne.Canvas, id int) {
+	if c == nil {
+		return
+	}
+
+	var target fyne.Focusable
+	if f.view == GridView && f.grid != nil {
+		f.grid.SetHighlight(id)
+		target = f.grid
+	} else if f.list != nil {
+		f.list.SetHighlight(id)
+		target = f.list
+	}
+
+	if target != nil {
+		c.Focus(target)
+	}
 }
 
 func (f *fileList) onResize() {
@@ -191,6 +264,9 @@ func (f *fileList) setView(view ViewLayout) {
 
 func (f *fileList) setFiles(files []fyne.URI) {
 	f.files = files
+	// New contents: ensure no widget-owned selection highlight survives from the
+	// previous folder. The picker's selection is reset separately by refreshDir.
+	f.clearWidgetSelection()
 	f.filterAndSort()
 	f.refresh()
 
@@ -553,6 +629,12 @@ func (i *fileItem) MouseUp(e *desktop.MouseEvent) {
 		i.picker.ExtendSelection(i.id)
 	} else {
 		i.picker.Select(i.id)
+	}
+
+	// Hand keyboard focus to the file list so the user can keep navigating with
+	// the arrow keys (and confirm with Return) without first pressing Tab.
+	if fd, ok := i.picker.(*fileDialog); ok {
+		fd.focusFileList(i.id)
 	}
 }
 

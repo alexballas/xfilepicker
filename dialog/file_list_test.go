@@ -2,6 +2,7 @@ package dialog
 
 import (
 	"fmt"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -511,5 +512,91 @@ func TestStableGridLabelWidth(t *testing.T) {
 				t.Fatalf("stableGridLabelWidth(%v, %v) = %.2f, want %.2f", tc.base, tc.actual, got, tc.want)
 			}
 		})
+	}
+}
+
+func TestFileList_KeyboardSelectionRoutesThroughPicker(t *testing.T) {
+	a := test.NewApp()
+	defer a.Quit()
+
+	w := a.NewWindow("Test")
+	root := t.TempDir()
+	for _, name := range []string{"a.txt", "b.txt", "c.txt"} {
+		if err := os.WriteFile(filepath.Join(root, name), []byte("x"), 0o644); err != nil {
+			t.Fatalf("write failed: %v", err)
+		}
+	}
+
+	d := NewFileOpen(func(_ []fyne.URIReadCloser, _ error) {}, w, true).(*fileDialog)
+	d.makeUI()
+	d.SetView(ListView)
+
+	lister, err := storage.ListerForURI(storage.NewFileURI(root))
+	if err != nil {
+		t.Fatalf("lister failed: %v", err)
+	}
+	d.refreshDir(lister)
+
+	if len(d.fileList.filtered) == 0 {
+		t.Fatalf("expected files to be listed")
+	}
+	uri := d.fileList.filtered[0]
+
+	// Simulate keyboard Space on the focused (first) item. widget.List.TypedKey
+	// dispatches Space to list.Select(currentHighlight); mirror that here.
+	d.fileList.list.Select(0)
+
+	if !d.IsSelected(uri) {
+		t.Fatalf("keyboard selection did not update the picker selection state")
+	}
+
+	// The widget must not retain its own selection. Otherwise it renders a second
+	// "ghost" highlight, and a repeat Space on the same item is swallowed by the
+	// widget's already-selected guard. A second Space must reach the picker and
+	// toggle the selection back off.
+	d.fileList.list.Select(0)
+	if d.IsSelected(uri) {
+		t.Fatalf("widget selection was not cleared; second Space never reached the picker")
+	}
+}
+
+type countingPicker struct {
+	mockPicker
+	toggleCalls int
+}
+
+func (c *countingPicker) IsMultiSelect() bool    { return true }
+func (c *countingPicker) ToggleSelection(id int) { c.toggleCalls++ }
+
+func TestFileList_ChangingFolderClearsWidgetSelection(t *testing.T) {
+	test.NewApp()
+
+	picker := &countingPicker{}
+	fl := newFileList(picker)
+	fl.setView(ListView)
+
+	fl.setFiles([]fyne.URI{
+		storage.NewFileURI("/tmp/a.txt"),
+		storage.NewFileURI("/tmp/b.txt"),
+	})
+
+	// Simulate a stray widget-owned selection that lingers (the pre-fix
+	// behavior): detach our handler so Select leaves the widget's internal
+	// selection in place instead of routing it through the picker.
+	saved := fl.list.OnSelected
+	fl.list.OnSelected = nil
+	fl.list.Select(0)
+	fl.list.OnSelected = saved
+
+	// Navigating into a different folder must clear that stale widget selection.
+	fl.setFiles([]fyne.URI{
+		storage.NewFileURI("/other/x.txt"),
+	})
+
+	// If the widget selection survived, its already-selected guard would swallow
+	// a Space on id 0, so the picker would never see the toggle.
+	fl.list.Select(0)
+	if picker.toggleCalls != 1 {
+		t.Fatalf("expected Space after folder change to reach the picker once, got %d", picker.toggleCalls)
 	}
 }

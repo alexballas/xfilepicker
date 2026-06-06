@@ -395,3 +395,92 @@ func TestFileSaveDialog_OverwriteUsesConfirmation(t *testing.T) {
 	}
 	_ = gotWriter.Close()
 }
+
+func TestFileDialog_EnterConfirmsSelectionFromFocusedList(t *testing.T) {
+	a := test.NewApp()
+	defer a.Quit()
+
+	w := a.NewWindow("Test")
+	root := t.TempDir()
+	for _, name := range []string{"a.txt", "b.txt"} {
+		if err := os.WriteFile(filepath.Join(root, name), []byte("x"), 0o644); err != nil {
+			t.Fatalf("write failed: %v", err)
+		}
+	}
+
+	var opened []string
+	d := NewFileOpen(func(readers []fyne.URIReadCloser, err error) {
+		if err != nil {
+			t.Fatalf("unexpected callback error: %v", err)
+		}
+		for _, r := range readers {
+			opened = append(opened, r.URI().Path())
+			r.Close()
+		}
+	}, w, true).(*fileDialog)
+	d.makeUI()
+	d.win = widget.NewModalPopUp(container.NewVBox(), w.Canvas())
+	d.SetView(ListView)
+
+	lister, err := storage.ListerForURI(storage.NewFileURI(root))
+	if err != nil {
+		t.Fatalf("lister failed: %v", err)
+	}
+	d.refreshDir(lister)
+
+	if len(d.fileList.filtered) == 0 {
+		t.Fatalf("expected files to be listed")
+	}
+	uri := d.fileList.filtered[0]
+	d.Select(0)
+
+	// Return on the focused list must behave like clicking the OK button.
+	d.fileList.list.TypedKey(&fyne.KeyEvent{Name: fyne.KeyReturn})
+
+	if len(opened) != 1 || opened[0] != uri.Path() {
+		t.Fatalf("expected Enter to open %q, got %v", uri.Path(), opened)
+	}
+}
+
+func TestFileDialog_PointerSelectionFocusesListForKeyboard(t *testing.T) {
+	a := test.NewApp()
+	defer a.Quit()
+
+	w := a.NewWindow("Test")
+	root := t.TempDir()
+	for _, name := range []string{"a.txt", "b.txt", "c.txt"} {
+		if err := os.WriteFile(filepath.Join(root, name), []byte("x"), 0o644); err != nil {
+			t.Fatalf("write failed: %v", err)
+		}
+	}
+
+	d := NewFileOpen(func([]fyne.URIReadCloser, error) {}, w, true).(*fileDialog)
+	// Render the real dialog UI into the window so the list is part of the
+	// canvas focus tree (the focus manager only focuses objects it can find).
+	w.SetContent(d.makeUI())
+	d.SetView(ListView)
+
+	lister, err := storage.ListerForURI(storage.NewFileURI(root))
+	if err != nil {
+		t.Fatalf("lister failed: %v", err)
+	}
+	d.refreshDir(lister)
+
+	if len(d.fileList.filtered) < 2 {
+		t.Fatalf("expected at least 2 files, got %d", len(d.fileList.filtered))
+	}
+
+	// Emulate the focus hand-off a pointer click performs (see fileItem.MouseUp).
+	d.focusFileList(1)
+
+	if got := w.Canvas().Focused(); got != d.fileList.list {
+		t.Fatalf("expected the file list to receive keyboard focus, got %T", got)
+	}
+
+	// The keyboard cursor must sit on the clicked item, so Space acts on item 1
+	// rather than jumping to index 0.
+	d.fileList.list.TypedKey(&fyne.KeyEvent{Name: fyne.KeySpace})
+	if !d.IsSelected(d.fileList.filtered[1]) {
+		t.Fatalf("expected Space to act on the highlighted (clicked) item")
+	}
+}
