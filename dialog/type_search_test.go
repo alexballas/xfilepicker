@@ -165,16 +165,18 @@ func TestEscapeReturnsFocusToFileList(t *testing.T) {
 	}
 }
 
-// TestEscapeUnfocusesWhenSearchFocusedDirectly verifies that when the search box
+// TestEscapeFromDirectSearchFocusesFileList verifies that when the search box
 // was focused directly (not via type-to-search from a navigable area), Escape
-// releases focus entirely rather than restoring a stale target.
-func TestEscapeUnfocusesWhenSearchFocusedDirectly(t *testing.T) {
+// lands focus on the file list — the dialog's primary navigation area — so arrow
+// keys work immediately, rather than dropping focus to nowhere.
+func TestEscapeFromDirectSearchFocusesFileList(t *testing.T) {
 	a := test.NewApp()
 	t.Cleanup(a.Quit)
 	w := a.NewWindow("Test")
 
 	d := NewFileOpen(func([]fyne.URIReadCloser, error) {}, w, true).(*fileDialog)
 	w.SetContent(d.makeUI())
+	d.SetView(ListView)
 
 	// Focus and type into the search box directly, bypassing type-to-search.
 	w.Canvas().Focus(d.searchEntry)
@@ -184,8 +186,72 @@ func TestEscapeUnfocusesWhenSearchFocusedDirectly(t *testing.T) {
 	if d.searchEntry.Text != "" {
 		t.Fatalf("escape should clear the search text, got %q", d.searchEntry.Text)
 	}
-	if got := w.Canvas().Focused(); got != nil {
-		t.Fatalf("escape should release focus when there is no navigation origin, got %T", got)
+	if got := w.Canvas().Focused(); got != d.fileList.list {
+		t.Fatalf("escape should focus the file list when there is no navigation origin, got %T", got)
+	}
+}
+
+// TestEscapeClearsSearchWhenFileListFocused reproduces the edge case where the
+// user types a filter into the search box and then clicks a file with the mouse,
+// which moves keyboard focus to the file list. Escape must still cancel the
+// search even though the search box no longer has focus — the list forwards
+// Escape via OnEscape. The list keeps focus so navigation continues.
+func TestEscapeClearsSearchWhenFileListFocused(t *testing.T) {
+	a := test.NewApp()
+	t.Cleanup(a.Quit)
+	w := a.NewWindow("Test")
+
+	root := t.TempDir()
+	for i := 0; i < 4; i++ {
+		name := fmt.Sprintf("file-%02d.txt", i)
+		if err := os.WriteFile(filepath.Join(root, name), []byte("x"), 0o644); err != nil {
+			t.Fatalf("write failed: %v", err)
+		}
+	}
+
+	d := NewFileOpen(func([]fyne.URIReadCloser, error) {}, w, true).(*fileDialog)
+	w.SetContent(d.makeUI())
+	d.SetView(ListView)
+	d.fileList.list.Resize(fyne.NewSize(400, 400))
+	d.fileList.overlay.Resize(fyne.NewSize(400, 400))
+
+	lister, err := storage.ListerForURI(storage.NewFileURI(root))
+	if err != nil {
+		t.Fatalf("lister failed: %v", err)
+	}
+	d.refreshDir(lister)
+
+	// Type a filter, then simulate clicking a file: focus moves to the list.
+	d.searchEntry.SetText("file")
+	w.Canvas().Focus(d.fileList.list)
+
+	// Escape while the list holds focus must cancel the search via OnEscape.
+	d.fileList.list.TypedKey(&fyne.KeyEvent{Name: fyne.KeyEscape})
+	if d.searchEntry.Text != "" {
+		t.Fatalf("escape from the focused list should clear the search, got %q", d.searchEntry.Text)
+	}
+	if got := w.Canvas().Focused(); got != d.fileList.list {
+		t.Fatalf("escape should leave focus on the file list, got %T", got)
+	}
+
+	// The grid view forwards Escape the same way.
+	d.SetView(GridView)
+	d.searchEntry.SetText("file")
+	w.Canvas().Focus(d.fileList.grid)
+	d.fileList.grid.TypedKey(&fyne.KeyEvent{Name: fyne.KeyEscape})
+	if d.searchEntry.Text != "" {
+		t.Fatalf("escape from the focused grid should clear the search, got %q", d.searchEntry.Text)
+	}
+
+	// With the search already empty, Escape is a no-op for the search text and
+	// must not disturb the focused list.
+	w.Canvas().Focus(d.fileList.grid)
+	d.fileList.grid.TypedKey(&fyne.KeyEvent{Name: fyne.KeyEscape})
+	if d.searchEntry.Text != "" {
+		t.Fatalf("escape with empty search should keep it empty, got %q", d.searchEntry.Text)
+	}
+	if got := w.Canvas().Focused(); got != d.fileList.grid {
+		t.Fatalf("escape with empty search should leave focus on the grid, got %T", got)
 	}
 }
 

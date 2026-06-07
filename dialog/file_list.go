@@ -103,6 +103,7 @@ func newFileList(p FilePicker) *fileList {
 	f.grid.OnReturn = func(widget.GridWrapItemID) { f.confirmFromKeyboard() }
 	f.grid.OnKeyboardNavigated = f.navigateFromKeyboard
 	f.grid.OnTypedRune = f.searchFromKeyboard
+	f.grid.OnEscape = f.cancelSearchFromKeyboard
 
 	f.list = widget.NewList(
 		func() int { return len(f.filtered) },
@@ -125,6 +126,7 @@ func newFileList(p FilePicker) *fileList {
 	f.list.OnReturn = func(widget.ListItemID) { f.confirmFromKeyboard() }
 	f.list.OnKeyboardNavigated = f.navigateFromKeyboard
 	f.list.OnTypedRune = f.searchFromKeyboard
+	f.list.OnEscape = f.cancelSearchFromKeyboard
 
 	f.content = container.NewScroll(nil)
 	return f
@@ -204,6 +206,35 @@ func (f *fileList) clearWidgetSelection() {
 func (f *fileList) confirmFromKeyboard() {
 	if fd, ok := f.picker.(*fileDialog); ok {
 		fd.confirmFromKeyboard()
+	}
+}
+
+// cancelSearchFromKeyboard handles Escape pressed while the list/grid holds
+// focus, clearing any in-progress type-ahead search the user started before
+// clicking into the file area. See fileDialog.cancelSearchOnEscape.
+func (f *fileList) cancelSearchFromKeyboard() {
+	if fd, ok := f.picker.(*fileDialog); ok {
+		fd.cancelSearchOnEscape()
+	}
+}
+
+// focusActiveView gives keyboard focus to whichever of the list/grid is
+// currently showing, leaving its highlight cursor untouched so navigation
+// resumes from wherever it last was.
+func (f *fileList) focusActiveView(c fyne.Canvas) {
+	if c == nil {
+		return
+	}
+
+	var target fyne.Focusable
+	if f.view == GridView && f.grid != nil {
+		target = f.grid
+	} else if f.list != nil {
+		target = f.list
+	}
+
+	if target != nil {
+		c.Focus(target)
 	}
 }
 

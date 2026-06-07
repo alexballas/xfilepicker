@@ -47,6 +47,14 @@ func newSidebar(p FilePicker) *sidebar {
 			box.Objects[1].(*widget.Label).SetText(lang.L(item.locName))
 		},
 	)
+	// Escape while the sidebar holds focus cancels an in-progress type-ahead
+	// search, matching the file list. Without this a filter typed before clicking
+	// a sidebar entry would stay stuck, since the search box never sees the key.
+	s.list.OnEscape = func() {
+		if fd, ok := s.picker.(*fileDialog); ok {
+			fd.cancelSearchOnEscape()
+		}
+	}
 	s.list.OnSelected = func(id widget.ListItemID) {
 		if id < len(s.items) {
 			s.picker.SetLocation(s.items[id].loc)
