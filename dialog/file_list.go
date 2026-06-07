@@ -102,6 +102,7 @@ func newFileList(p FilePicker) *fileList {
 	}
 	f.grid.OnReturn = func(widget.GridWrapItemID) { f.confirmFromKeyboard() }
 	f.grid.OnKeyboardNavigated = f.navigateFromKeyboard
+	f.grid.OnTypedRune = f.searchFromKeyboard
 
 	f.list = widget.NewList(
 		func() int { return len(f.filtered) },
@@ -123,6 +124,7 @@ func newFileList(p FilePicker) *fileList {
 	}
 	f.list.OnReturn = func(widget.ListItemID) { f.confirmFromKeyboard() }
 	f.list.OnKeyboardNavigated = f.navigateFromKeyboard
+	f.list.OnTypedRune = f.searchFromKeyboard
 
 	f.content = container.NewScroll(nil)
 	return f
@@ -139,6 +141,22 @@ func (f *fileList) selectFromKeyboard(id int) {
 		return
 	}
 	f.picker.ToggleSelection(id)
+}
+
+// searchFromKeyboard forwards a printable character typed while the list/grid
+// holds focus to the dialog's type-to-search box. Selecting a file focuses the
+// list/grid (so arrow keys keep working), but a focused list/grid otherwise
+// swallows typed runes: the canvas-level rune hook only fires when nothing is
+// focused, so without this the user would have to click the search box manually
+// after selecting. Space is skipped because the list/grid binds it to toggling
+// the focused item's selection.
+func (f *fileList) searchFromKeyboard(r rune) {
+	if r == ' ' {
+		return
+	}
+	if fd, ok := f.picker.(*fileDialog); ok {
+		fd.appendRuneToSearch(r)
+	}
 }
 
 // navigateFromKeyboard handles arrow-key navigation reported by the underlying

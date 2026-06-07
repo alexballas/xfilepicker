@@ -119,7 +119,7 @@ type fileDialog struct {
 	extensionFilter storage.FileFilter
 
 	// Search & Sort
-	searchEntry *widget.Entry
+	searchEntry *typeSearchEntry
 
 	originalOnTypedRune func(rune)
 	originalOnTypedKey  func(*fyne.KeyEvent)
@@ -466,7 +466,19 @@ func (f *fileDialog) typedRuneHook(r rune) {
 		return
 	}
 
-	// Focus search and append the character
+	f.appendRuneToSearch(r)
+}
+
+// appendRuneToSearch switches the dialog into type-to-search mode by focusing the
+// search box and appending r to it. It is the shared tail of the type-ahead
+// entry points: the canvas-level rune hook (which fires only when nothing is
+// focused) and the file list/grid OnTypedRune hooks (which fire when the file
+// area holds focus after a selection, where the canvas hook never runs).
+func (f *fileDialog) appendRuneToSearch(r rune) {
+	if f.searchEntry == nil {
+		return
+	}
+
 	f.parent.Canvas().Focus(f.searchEntry)
 	f.searchEntry.SetText(f.searchEntry.Text + string(r))
 	f.searchEntry.CursorColumn = len(f.searchEntry.Text)
@@ -604,11 +616,17 @@ func (f *fileDialog) makeUI() fyne.CanvasObject {
 	footer := container.NewBorder(nil, nil, nil, container.NewHBox(f.dismiss, f.open), footerContent)
 
 	// Header / TopBar
-	f.searchEntry = widget.NewEntry()
+	f.searchEntry = newTypeSearchEntry()
 	f.searchEntry.SetPlaceHolder(lang.L("Search..."))
 	f.searchEntry.OnChanged = func(s string) {
 		f.DismissMenu()
 		f.fileList.setFilter(s)
+	}
+	// Escape cancels the search: clearing the text resets the filter, then we
+	// release focus so the dialog returns to its idle keyboard state (where
+	// type-to-search and Enter-to-open work again via the canvas hooks).
+	f.searchEntry.onEscape = func() {
+		f.parent.Canvas().Unfocus()
 	}
 
 	viewToggle := widget.NewButtonWithIcon("", theme.GridIcon(), nil)

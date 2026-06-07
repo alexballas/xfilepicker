@@ -43,7 +43,7 @@ func TestEnterDoesNotTriggerOpenWhenFocusIsEntry(t *testing.T) {
 	a := test.NewApp()
 	w := a.NewWindow("Test")
 
-	searchEntry := widget.NewEntry()
+	searchEntry := newTypeSearchEntry()
 	w.SetContent(container.NewVBox(searchEntry))
 
 	called := 0
