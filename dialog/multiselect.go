@@ -121,6 +121,12 @@ type fileDialog struct {
 	// Search & Sort
 	searchEntry *typeSearchEntry
 
+	// searchReturnFocus remembers the widget that held keyboard focus when
+	// type-to-search stole it (typically the file list or sidebar), so Escape
+	// can hand focus back instead of dropping it. nil means focus came from
+	// nowhere navigable (e.g. the search box was clicked directly).
+	searchReturnFocus fyne.Focusable
+
 	originalOnTypedRune func(rune)
 	originalOnTypedKey  func(*fyne.KeyEvent)
 	activeMenu          *widget.PopUp
@@ -479,7 +485,16 @@ func (f *fileDialog) appendRuneToSearch(r rune) {
 		return
 	}
 
-	f.parent.Canvas().Focus(f.searchEntry)
+	c := f.parent.Canvas()
+	// Remember where focus was before type-to-search steals it so Escape can
+	// return the user to the file list/sidebar they were navigating. Only record
+	// on the initial steal: once the search box holds focus, later runes must not
+	// overwrite the origin with the search box itself.
+	if focused := c.Focused(); focused != f.searchEntry {
+		f.searchReturnFocus = focused
+	}
+
+	c.Focus(f.searchEntry)
 	f.searchEntry.SetText(f.searchEntry.Text + string(r))
 	f.searchEntry.CursorColumn = len(f.searchEntry.Text)
 	f.searchEntry.Refresh()
@@ -532,6 +547,27 @@ func (f *fileDialog) confirmFromKeyboard() {
 	if f.open != nil && !f.open.Disabled() && (f.isSaveMode() || len(f.selected) > 0) {
 		f.open.OnTapped()
 	}
+}
+
+// restoreFocusAfterSearch returns keyboard focus to the file list or sidebar
+// that type-to-search stole it from, so cancelling a search with Escape leaves
+// the user able to keep navigating with the arrow keys. The list/grid preserves
+// its highlight cursor across focus loss, so navigation resumes from the same
+// spot. When there was no prior navigation focus (the search box was focused
+// directly), it just releases focus, matching the idle keyboard state.
+func (f *fileDialog) restoreFocusAfterSearch() {
+	target := f.searchReturnFocus
+	f.searchReturnFocus = nil
+
+	c := f.parent.Canvas()
+	if c == nil {
+		return
+	}
+	if target != nil {
+		c.Focus(target)
+		return
+	}
+	c.Unfocus()
 }
 
 // focusFileList gives keyboard focus to the active file list view and moves its
@@ -623,11 +659,11 @@ func (f *fileDialog) makeUI() fyne.CanvasObject {
 		f.fileList.setFilter(s)
 	}
 	// Escape cancels the search: clearing the text resets the filter, then we
-	// release focus so the dialog returns to its idle keyboard state (where
-	// type-to-search and Enter-to-open work again via the canvas hooks).
-	f.searchEntry.onEscape = func() {
-		f.parent.Canvas().Unfocus()
-	}
+	// hand focus back to wherever type-to-search took it from (the file list or
+	// sidebar) so arrow-key navigation keeps working. If it came from nowhere
+	// navigable we release focus, returning the dialog to its idle keyboard state
+	// (where type-to-search and Enter-to-open work again via the canvas hooks).
+	f.searchEntry.onEscape = f.restoreFocusAfterSearch
 
 	viewToggle := widget.NewButtonWithIcon("", theme.GridIcon(), nil)
 	updateViewToggleIcon := func() {

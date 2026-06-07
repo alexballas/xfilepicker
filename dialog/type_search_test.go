@@ -1,10 +1,14 @@
 package dialog
 
 import (
+	"fmt"
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/alexballas/refyne/v2"
 	"github.com/alexballas/refyne/v2/container"
+	"github.com/alexballas/refyne/v2/storage"
 	"github.com/alexballas/refyne/v2/test"
 	"github.com/alexballas/refyne/v2/widget"
 )
@@ -101,6 +105,87 @@ func TestSearchEntryEscapeClearsAndUnfocuses(t *testing.T) {
 	entry.TypedRune('q')
 	if entry.Text != "q" {
 		t.Fatalf("normal typing should still work, got %q", entry.Text)
+	}
+}
+
+// TestEscapeReturnsFocusToFileList verifies that cancelling a type-ahead search
+// with Escape hands keyboard focus back to the file list it was started from,
+// rather than dropping focus, so the user can keep navigating with the arrow
+// keys. Previously Escape always unfocused, stranding keyboard navigation.
+func TestEscapeReturnsFocusToFileList(t *testing.T) {
+	a := test.NewApp()
+	t.Cleanup(a.Quit)
+	w := a.NewWindow("Test")
+
+	root := t.TempDir()
+	for i := 0; i < 4; i++ {
+		name := fmt.Sprintf("file-%02d.txt", i)
+		if err := os.WriteFile(filepath.Join(root, name), []byte("x"), 0o644); err != nil {
+			t.Fatalf("write failed: %v", err)
+		}
+	}
+
+	d := NewFileOpen(func([]fyne.URIReadCloser, error) {}, w, true).(*fileDialog)
+	// Render the dialog UI so the list and search box join the focus tree and the
+	// real Escape wiring (restoreFocusAfterSearch) is exercised.
+	w.SetContent(d.makeUI())
+	d.SetView(ListView)
+	d.fileList.list.Resize(fyne.NewSize(400, 400))
+	d.fileList.overlay.Resize(fyne.NewSize(400, 400))
+
+	lister, err := storage.ListerForURI(storage.NewFileURI(root))
+	if err != nil {
+		t.Fatalf("lister failed: %v", err)
+	}
+	d.refreshDir(lister)
+
+	// Start from the file list holding keyboard focus, as it would after a click
+	// or arrow-key navigation.
+	w.Canvas().Focus(d.fileList.list)
+
+	// Typing routes through the list into the search box, which steals focus.
+	d.fileList.list.TypedRune('f')
+	if w.Canvas().Focused() != d.searchEntry {
+		t.Fatalf("type-to-search should focus the search box, got %T", w.Canvas().Focused())
+	}
+	if d.searchReturnFocus != d.fileList.list {
+		t.Fatalf("expected the list to be remembered as the return focus, got %T", d.searchReturnFocus)
+	}
+
+	// Escape clears the search and returns focus to the list so arrow keys work.
+	d.searchEntry.TypedKey(&fyne.KeyEvent{Name: fyne.KeyEscape})
+	if d.searchEntry.Text != "" {
+		t.Fatalf("escape should clear the search text, got %q", d.searchEntry.Text)
+	}
+	if got := w.Canvas().Focused(); got != d.fileList.list {
+		t.Fatalf("escape should return focus to the file list, got %T", got)
+	}
+	if d.searchReturnFocus != nil {
+		t.Fatalf("escape should clear the remembered return focus, got %T", d.searchReturnFocus)
+	}
+}
+
+// TestEscapeUnfocusesWhenSearchFocusedDirectly verifies that when the search box
+// was focused directly (not via type-to-search from a navigable area), Escape
+// releases focus entirely rather than restoring a stale target.
+func TestEscapeUnfocusesWhenSearchFocusedDirectly(t *testing.T) {
+	a := test.NewApp()
+	t.Cleanup(a.Quit)
+	w := a.NewWindow("Test")
+
+	d := NewFileOpen(func([]fyne.URIReadCloser, error) {}, w, true).(*fileDialog)
+	w.SetContent(d.makeUI())
+
+	// Focus and type into the search box directly, bypassing type-to-search.
+	w.Canvas().Focus(d.searchEntry)
+	d.searchEntry.SetText("abc")
+
+	d.searchEntry.TypedKey(&fyne.KeyEvent{Name: fyne.KeyEscape})
+	if d.searchEntry.Text != "" {
+		t.Fatalf("escape should clear the search text, got %q", d.searchEntry.Text)
+	}
+	if got := w.Canvas().Focused(); got != nil {
+		t.Fatalf("escape should release focus when there is no navigation origin, got %T", got)
 	}
 }
 
