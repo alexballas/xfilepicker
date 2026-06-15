@@ -265,6 +265,26 @@ func (f *fileList) focusForKeyboardNav(c fyne.Canvas, id int) {
 	}
 }
 
+// focusForKeyboardNavPreserveScroll is used after marquee selection. Setting
+// the keyboard highlight scrolls the active widget to the highlighted item, but
+// releasing a marquee while auto-scroll is active should leave the viewport
+// exactly where auto-scroll ended.
+func (f *fileList) focusForKeyboardNavPreserveScroll(c fyne.Canvas, id int) {
+	offset := f.currentScrollOffset()
+	f.focusForKeyboardNav(c, id)
+	f.restoreScrollOffset(offset)
+}
+
+func (f *fileList) restoreScrollOffset(offset float32) {
+	if f.view == GridView && f.grid != nil {
+		f.grid.ScrollToOffset(offset)
+		return
+	}
+	if f.list != nil {
+		f.list.ScrollToOffset(offset)
+	}
+}
+
 func (f *fileList) onResize() {
 	if f == nil || f.view != GridView || f.grid == nil {
 		return
@@ -1546,7 +1566,7 @@ func (f *fileList) onSelectionEnd() {
 	// over blank space shouldn't steal focus.
 	if focusID >= 0 {
 		if fd, ok := f.picker.(*fileDialog); ok {
-			fd.focusFileList(focusID)
+			fd.focusFileListPreserveScroll(focusID)
 		}
 	}
 }

@@ -604,6 +604,17 @@ func (f *fileDialog) focusFileList(id int) {
 	}
 }
 
+// focusFileListPreserveScroll gives the file view keyboard focus after marquee
+// selection without letting the keyboard highlight handoff move the viewport.
+func (f *fileDialog) focusFileListPreserveScroll(id int) {
+	if f.fileList == nil {
+		return
+	}
+	if c := f.focusCanvas(); c != nil {
+		f.fileList.focusForKeyboardNavPreserveScroll(c, id)
+	}
+}
+
 // focusCanvas returns the canvas that owns the dialog's widgets. The modal
 // popup is created on the parent canvas, so the two reference the same object;
 // we prefer the popup's reference and fall back to the parent.

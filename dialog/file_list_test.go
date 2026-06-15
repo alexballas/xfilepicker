@@ -265,6 +265,87 @@ func TestFileList_MarqueeSelection_StartAnchorStableAcrossScroll(t *testing.T) {
 	}
 }
 
+func TestFileList_MarqueeSelectionEndPreservesScrollOffset(t *testing.T) {
+	test.NewApp()
+
+	for _, tc := range []struct {
+		name string
+		view ViewLayout
+	}{
+		{name: "list", view: ListView},
+		{name: "grid", view: GridView},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			d := &fileDialog{
+				selected:      make(map[string]fyne.URI),
+				allowMultiple: true,
+				view:          tc.view,
+				anchor:        -1,
+			}
+			fl := newFileList(d)
+			d.fileList = fl
+			fl.setView(tc.view)
+
+			var files []fyne.URI
+			for i := 0; i < 240; i++ {
+				files = append(files, storage.NewFileURI(filepath.Join("/tmp", fmt.Sprintf("file-%03d.txt", i))))
+			}
+			fl.setFiles(files)
+
+			var active fyne.CanvasObject
+			if tc.view == GridView {
+				active = fl.grid
+			} else {
+				active = fl.list
+			}
+
+			win := test.NewTempWindow(t, active)
+			d.parent = win
+			win.Resize(fyne.NewSize(420, 220))
+			active.Resize(fyne.NewSize(420, 220))
+
+			scrollTo := func(offset float32) {
+				if tc.view == GridView {
+					fl.grid.ScrollToOffset(offset)
+					return
+				}
+				fl.list.ScrollToOffset(offset)
+			}
+			scrollOffset := func() float32 {
+				if tc.view == GridView {
+					return fl.grid.GetScrollOffset()
+				}
+				return fl.list.GetScrollOffset()
+			}
+
+			for _, move := range []struct {
+				name          string
+				initialOffset float32
+				focusID       int
+			}{
+				{name: "highlight-above-viewport", initialOffset: 900, focusID: 1},
+				{name: "highlight-below-viewport", initialOffset: 0, focusID: 180},
+			} {
+				t.Run(move.name, func(t *testing.T) {
+					scrollTo(move.initialOffset)
+					want := scrollOffset()
+					if move.initialOffset > 0 && want == 0 {
+						t.Fatalf("test setup failed: expected non-zero scroll offset")
+					}
+
+					fl.lastDragSelection = []int{move.focusID}
+					fl.dragSelecting = true
+					fl.onSelectionEnd()
+
+					if got := scrollOffset(); abs32(got-want) > 0.01 {
+						t.Fatalf("expected scroll offset to remain %.2f after marquee release, got %.2f", want, got)
+					}
+				})
+			}
+		})
+	}
+}
+
 func TestFileList_MarqueeSelection_DisabledForSingleSelect(t *testing.T) {
 	test.NewApp()
 
