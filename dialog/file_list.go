@@ -44,16 +44,20 @@ type fileList struct {
 	dragStartContent fyne.Position
 	dragCurViewport  fyne.Position
 
-	autoScrollTicker *time.Ticker
-	autoScrollStop   chan struct{}
-	autoScrollDir    int
-	autoScrollStep   float32
+	autoScrollAnim     *fyne.Animation
+	autoScrollDir      int
+	autoScrollVelocity float32
+	autoScrollLastTick time.Time
 
 	lastGridViewportWidth float32
 	gridCols              int
 }
 
-const gridColumnHysteresisPx float32 = 2.0
+const (
+	gridColumnHysteresisPx float32 = 2.0
+	autoScrollBaseFrame            = 30 * time.Millisecond
+	autoScrollMaxFrame             = 50 * time.Millisecond
+)
 
 type FileSortOrder int
 
@@ -1634,49 +1638,35 @@ func (f *fileList) updateAutoScroll() {
 	}
 
 	f.autoScrollDir = dir
-	f.autoScrollStep = intensity * maxStep
+	f.autoScrollVelocity = autoScrollVelocity(intensity * maxStep)
 	f.startAutoScroll()
 }
 
 func (f *fileList) startAutoScroll() {
-	if f.autoScrollTicker != nil {
+	if f.autoScrollAnim != nil {
 		return
 	}
-	f.autoScrollTicker = time.NewTicker(30 * time.Millisecond)
-	f.autoScrollStop = make(chan struct{})
-
-	stop := f.autoScrollStop
-	ticker := f.autoScrollTicker
-	go func() {
-		for {
-			select {
-			case <-ticker.C:
-				fyne.Do(func() {
-					f.autoScrollTick()
-				})
-			case <-stop:
-				return
-			}
-		}
-	}()
+	f.autoScrollLastTick = time.Now()
+	f.autoScrollAnim = fyne.NewAnimation(time.Second, func(float32) {
+		f.autoScrollTick()
+	})
+	f.autoScrollAnim.Curve = fyne.AnimationLinear
+	f.autoScrollAnim.RepeatCount = fyne.AnimationRepeatForever
+	f.autoScrollAnim.Start()
 }
 
 func (f *fileList) stopAutoScroll() {
-	if f.autoScrollTicker == nil {
-		return
-	}
-	f.autoScrollTicker.Stop()
-	f.autoScrollTicker = nil
-	if f.autoScrollStop != nil {
-		close(f.autoScrollStop)
-		f.autoScrollStop = nil
+	if f.autoScrollAnim != nil {
+		f.autoScrollAnim.Stop()
+		f.autoScrollAnim = nil
 	}
 	f.autoScrollDir = 0
-	f.autoScrollStep = 0
+	f.autoScrollVelocity = 0
+	f.autoScrollLastTick = time.Time{}
 }
 
 func (f *fileList) autoScrollTick() {
-	if !f.dragSelecting || f.autoScrollDir == 0 || f.autoScrollStep <= 0 {
+	if !f.dragSelecting || f.autoScrollDir == 0 || f.autoScrollVelocity <= 0 {
 		f.stopAutoScroll()
 		return
 	}
@@ -1688,7 +1678,15 @@ func (f *fileList) autoScrollTick() {
 		return
 	}
 
-	next := offset + float32(f.autoScrollDir)*f.autoScrollStep
+	now := time.Now()
+	elapsed := now.Sub(f.autoScrollLastTick)
+	f.autoScrollLastTick = now
+	distance := autoScrollDistance(f.autoScrollVelocity, elapsed)
+	if distance <= 0 {
+		return
+	}
+
+	next := offset + float32(f.autoScrollDir)*distance
 	if next < 0 {
 		next = 0
 	} else if next > maxOffset {
@@ -1710,6 +1708,20 @@ func (f *fileList) autoScrollTick() {
 	// Scrolling changes the content coordinates of the current cursor position (viewport + offset),
 	// so refresh selection while the pointer is held at the edge.
 	f.updateDragSelection()
+}
+
+func autoScrollVelocity(stepPerBaseFrame float32) float32 {
+	return stepPerBaseFrame / float32(autoScrollBaseFrame.Seconds())
+}
+
+func autoScrollDistance(velocity float32, elapsed time.Duration) float32 {
+	if elapsed <= 0 || velocity <= 0 {
+		return 0
+	}
+	if elapsed > autoScrollMaxFrame {
+		elapsed = autoScrollMaxFrame
+	}
+	return velocity * float32(elapsed.Seconds())
 }
 
 func min32(a, b float32) float32 {

@@ -637,6 +637,29 @@ func TestStableGridLabelWidth(t *testing.T) {
 	}
 }
 
+func TestAutoScrollDistanceUsesElapsedFrameTime(t *testing.T) {
+	step := float32(24)
+	velocity := autoScrollVelocity(step)
+	assertClose := func(name string, got, want float32) {
+		t.Helper()
+		if diff := got - want; diff < -0.001 || diff > 0.001 {
+			t.Fatalf("%s = %.4f, want %.4f", name, got, want)
+		}
+	}
+
+	assertClose("base frame", autoScrollDistance(velocity, autoScrollBaseFrame), step)
+	assertClose("half frame", autoScrollDistance(velocity, autoScrollBaseFrame/2), step/2)
+	assertClose(
+		"clamped long frame",
+		autoScrollDistance(velocity, autoScrollMaxFrame*3),
+		velocity*float32(autoScrollMaxFrame.Seconds()),
+	)
+
+	if got := autoScrollDistance(velocity, 0); got != 0 {
+		t.Fatalf("zero elapsed = %.4f, want 0", got)
+	}
+}
+
 func TestFileList_KeyboardSelectionRoutesThroughPicker(t *testing.T) {
 	a := test.NewApp()
 	defer a.Quit()
