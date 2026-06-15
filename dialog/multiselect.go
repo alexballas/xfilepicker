@@ -752,7 +752,8 @@ func (f *fileDialog) makeUI() fyne.CanvasObject {
 		lang.L("Name (A-Z)"),
 		lang.L("Name (Z-A)"),
 		lang.L("Size"),
-		lang.L("Date"),
+		lang.L("Last Modified"),
+		lang.L("First Modified"),
 	}, func(s string) {
 		var order FileSortOrder
 		switch s {
@@ -760,8 +761,10 @@ func (f *fileDialog) makeUI() fyne.CanvasObject {
 			order = SortNameDesc
 		case lang.L("Size"):
 			order = SortSizeAsc // TODO: Descending?
-		case lang.L("Date"):
-			order = SortDateDesc
+		case lang.L("Last Modified"):
+			order = SortLastModified
+		case lang.L("First Modified"):
+			order = SortFirstModified
 		default:
 			order = SortNameAsc
 		}

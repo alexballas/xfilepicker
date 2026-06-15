@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 	"unicode/utf8"
 
 	"github.com/alexballas/refyne/v2"
@@ -88,6 +89,58 @@ func TestFileList_Sort_Filter(t *testing.T) {
 	}
 	if fl.filtered[0].Name() != "banana.png" {
 		t.Errorf("Expected banana.png, got %s", fl.filtered[0].Name())
+	}
+}
+
+func TestFileList_SortModifiedTime(t *testing.T) {
+	test.NewApp()
+	picker := &mockPicker{}
+	fl := newFileList(picker)
+
+	root := t.TempDir()
+	oldPath := filepath.Join(root, "old.txt")
+	midPath := filepath.Join(root, "mid.txt")
+	newPath := filepath.Join(root, "new.txt")
+	for _, path := range []string{oldPath, midPath, newPath} {
+		if err := os.WriteFile(path, []byte("x"), 0o644); err != nil {
+			t.Fatalf("write failed: %v", err)
+		}
+	}
+
+	base := time.Unix(1_700_000_000, 0)
+	times := map[string]time.Time{
+		oldPath: base,
+		midPath: base.Add(1 * time.Hour),
+		newPath: base.Add(2 * time.Hour),
+	}
+	for path, modTime := range times {
+		if err := os.Chtimes(path, modTime, modTime); err != nil {
+			t.Fatalf("chtimes failed: %v", err)
+		}
+	}
+
+	fl.setFiles([]fyne.URI{
+		storage.NewFileURI(midPath),
+		storage.NewFileURI(oldPath),
+		storage.NewFileURI(newPath),
+	})
+
+	fl.setSortOrder(SortLastModified)
+	assertFileOrder(t, fl.filtered, "new.txt", "mid.txt", "old.txt")
+
+	fl.setSortOrder(SortFirstModified)
+	assertFileOrder(t, fl.filtered, "old.txt", "mid.txt", "new.txt")
+}
+
+func assertFileOrder(t *testing.T, uris []fyne.URI, names ...string) {
+	t.Helper()
+	if len(uris) != len(names) {
+		t.Fatalf("got %d files, want %d", len(uris), len(names))
+	}
+	for i, name := range names {
+		if uris[i].Name() != name {
+			t.Fatalf("file %d = %q, want %q", i, uris[i].Name(), name)
+		}
 	}
 }
 

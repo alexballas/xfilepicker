@@ -38,7 +38,7 @@ type ThumbnailManager struct {
 
 var (
 	MaxCacheSize  int64 = 500 * 1024 * 1024 // 500MB
-	MaxCacheFiles int   = 10000
+	MaxCacheFiles int   = 20000
 )
 
 var (
@@ -86,38 +86,39 @@ func (m *ThumbnailManager) LoadMemoryOnly(path string) *canvas.Image {
 	return nil
 }
 
+// LoadCached retrieves a thumbnail from memory or disk cache without generating
+// one on miss. The callback is only called on cache hit.
+func (m *ThumbnailManager) LoadCached(uri fyne.URI, callback func(*canvas.Image)) {
+	path, ok := supportedThumbnailPath(uri)
+	if !ok {
+		return
+	}
+
+	if cached, ok := m.cache.Load(path); ok {
+		callback(cached.(*canvas.Image))
+		return
+	}
+
+	if img := m.loadDiskCache(path); img != nil {
+		callback(img)
+	}
+}
+
 func (m *ThumbnailManager) Load(uri fyne.URI, callback func(*canvas.Image)) {
-	if uri == nil || uri.Scheme() != "file" {
-		// Not a local file, or nil
+	path, ok := supportedThumbnailPath(uri)
+	if !ok {
 		return
 	}
 
-	ext := strings.ToLower(filepath.Ext(uri.Path()))
-	if !isSupportedImage(ext) && !isSupportedVideo(ext) {
-		// Not a supported format
-		return
-	}
-
-	path := uri.Path()
 	if cached, ok := m.cache.Load(path); ok {
 		callback(cached.(*canvas.Image))
 		return
 	}
 
 	// Check disk cache before queuing
-	if m.cacheDir != "" {
-		if key, err := m.generateCacheKey(path); err == nil {
-			cachePath := filepath.Join(m.cacheDir, key+".jpg")
-			if _, err := os.Stat(cachePath); err == nil {
-				if img, err := loadImage(cachePath); err == nil {
-					canvasImg := canvas.NewImageFromImage(img)
-					canvasImg.FillMode = canvas.ImageFillContain
-					m.cache.Store(path, canvasImg)
-					callback(canvasImg)
-					return
-				}
-			}
-		}
+	if img := m.loadDiskCache(path); img != nil {
+		callback(img)
+		return
 	}
 
 	// LIFO Queue Logic
@@ -141,30 +142,19 @@ func (m *ThumbnailManager) PrewarmDirectory(uris []fyne.URI) {
 
 	go func() {
 		for _, uri := range uris {
-			if uri.Scheme() != "file" {
+			path, ok := supportedThumbnailPath(uri)
+			if !ok {
 				continue
 			}
-			path := uri.Path()
 
 			// Skip if already in memory
 			if _, ok := m.cache.Load(path); ok {
 				continue
 			}
 
-			// Generate key (this involves Stat() and reading 32KB, but it's background)
-			key, err := m.generateCacheKey(path)
-			if err != nil {
-				continue
-			}
-
-			cachePath := filepath.Join(m.cacheDir, key+".jpg")
-			if _, err := os.Stat(cachePath); err == nil {
-				if img, err := loadImage(cachePath); err == nil {
-					canvasImg := canvas.NewImageFromImage(img)
-					canvasImg.FillMode = canvas.ImageFillContain
-					m.cache.Store(path, canvasImg)
-				}
-			}
+			// This reads the source metadata and first 32KB to compute the key,
+			// but never generates a missing thumbnail.
+			_ = m.loadDiskCache(path)
 			// Small sleep to avoid I/O spikes
 			time.Sleep(5 * time.Millisecond)
 		}
@@ -254,6 +244,7 @@ func (m *ThumbnailManager) worker() {
 				if err == nil {
 					_ = jpeg.Encode(f, dst, &jpeg.Options{Quality: 85})
 					f.Close()
+					m.markCacheAccessed(cachePath)
 				}
 			}
 		}
@@ -348,6 +339,19 @@ func isSupportedVideo(ext string) bool {
 	return ext == ".mp4" || ext == ".mkv" || ext == ".avi" || ext == ".webm" || ext == ".mov"
 }
 
+func supportedThumbnailPath(uri fyne.URI) (string, bool) {
+	if uri == nil || uri.Scheme() != "file" {
+		return "", false
+	}
+
+	path := uri.Path()
+	ext := strings.ToLower(filepath.Ext(path))
+	if !isSupportedImage(ext) && !isSupportedVideo(ext) {
+		return "", false
+	}
+	return path, true
+}
+
 func (m *ThumbnailManager) generateCacheKey(path string) (string, error) {
 	absPath, err := filepath.Abs(path)
 	if err != nil {
@@ -375,6 +379,40 @@ func (m *ThumbnailManager) generateCacheKey(path string) (string, error) {
 	}
 
 	return hex.EncodeToString(h.Sum(nil)), nil
+}
+
+func (m *ThumbnailManager) loadDiskCache(path string) *canvas.Image {
+	if m.cacheDir == "" {
+		return nil
+	}
+
+	key, err := m.generateCacheKey(path)
+	if err != nil {
+		return nil
+	}
+
+	cachePath := filepath.Join(m.cacheDir, key+".jpg")
+	if _, err := os.Stat(cachePath); err != nil {
+		return nil
+	}
+
+	img, err := loadImage(cachePath)
+	if err != nil {
+		return nil
+	}
+
+	m.markCacheAccessed(cachePath)
+	canvasImg := canvas.NewImageFromImage(img)
+	canvasImg.FillMode = canvas.ImageFillContain
+	m.cache.Store(path, canvasImg)
+	return canvasImg
+}
+
+func (m *ThumbnailManager) markCacheAccessed(cachePath string) {
+	// Do not rely on filesystem atime: it is often disabled, rounded, or delayed
+	// across platforms. Cache file mtime is app-owned and represents last access.
+	now := time.Now()
+	_ = os.Chtimes(cachePath, now, now)
 }
 
 func (m *ThumbnailManager) cleanupCache() {
@@ -416,7 +454,7 @@ func (m *ThumbnailManager) cleanupCache() {
 		return
 	}
 
-	// LRU: Sort by time ascending (oldest first)
+	// LRU: Sort by app-maintained last access time ascending (oldest first).
 	sort.Slice(cachedFiles, func(i, j int) bool {
 		return cachedFiles[i].time.Before(cachedFiles[j].time)
 	})

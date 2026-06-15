@@ -148,3 +148,135 @@ func TestFileList_ArrowKeyNavigationIsWired(t *testing.T) {
 		t.Fatalf("arrow key navigation should select the newly focused item, got %v", got)
 	}
 }
+
+func TestFileList_PageDown_SelectsVisiblePageTarget(t *testing.T) {
+	d := newKeyboardNavDialog(t,
+		"00.txt", "01.txt", "02.txt", "03.txt", "04.txt",
+		"05.txt", "06.txt", "07.txt", "08.txt", "09.txt",
+	)
+	d.fileList.list.Resize(fyne.NewSize(400, 100))
+
+	d.Select(0)
+	d.fileList.keyboardFocus = 0
+	want := d.fileList.pageNavigationTarget(0, fyne.KeyPageDown)
+	d.fileList.pageFromKeyboard(fyne.KeyPageDown, 0)
+
+	if got := selectedIndices(d); !equalInts(got, []int{want}) {
+		t.Fatalf("page down should select the last item in the visible page, got %v", got)
+	}
+	if d.fileList.keyboardFocus != want {
+		t.Fatalf("page down should move keyboard focus to %d, got %d", want, d.fileList.keyboardFocus)
+	}
+}
+
+func TestFileList_PageUp_SelectsVisiblePageTarget(t *testing.T) {
+	d := newKeyboardNavDialog(t,
+		"00.txt", "01.txt", "02.txt", "03.txt", "04.txt",
+		"05.txt", "06.txt", "07.txt", "08.txt", "09.txt",
+	)
+	d.fileList.list.Resize(fyne.NewSize(400, 100))
+
+	d.Select(6)
+	d.fileList.keyboardFocus = 6
+	want := d.fileList.pageNavigationTarget(6, fyne.KeyPageUp)
+	d.fileList.pageFromKeyboard(fyne.KeyPageUp, 0)
+
+	if got := selectedIndices(d); !equalInts(got, []int{want}) {
+		t.Fatalf("page up should select the first item in the previous visible page, got %v", got)
+	}
+	if d.fileList.keyboardFocus != want {
+		t.Fatalf("page up should move keyboard focus to %d, got %d", want, d.fileList.keyboardFocus)
+	}
+}
+
+func TestFileList_ShiftPageDown_ExtendsRangeFromAnchor(t *testing.T) {
+	d := newKeyboardNavDialog(t,
+		"00.txt", "01.txt", "02.txt", "03.txt", "04.txt",
+		"05.txt", "06.txt", "07.txt", "08.txt", "09.txt",
+	)
+	d.fileList.list.Resize(fyne.NewSize(400, 100))
+
+	d.Select(1)
+	d.fileList.keyboardFocus = 1
+	want := d.fileList.pageNavigationTarget(1, fyne.KeyPageDown)
+	d.fileList.pageFromKeyboard(fyne.KeyPageDown, fyne.KeyModifierShift)
+
+	if got := selectedIndices(d); !equalInts(got, intRange(1, want)) {
+		t.Fatalf("shift page down should extend the selection range, got %v", got)
+	}
+	if d.anchor != 1 {
+		t.Fatalf("shift page down must not move the selection anchor, got %d", d.anchor)
+	}
+}
+
+func TestFileList_CtrlPageDown_MovesFocusWithoutSelecting(t *testing.T) {
+	d := newKeyboardNavDialog(t,
+		"00.txt", "01.txt", "02.txt", "03.txt", "04.txt",
+		"05.txt", "06.txt", "07.txt", "08.txt", "09.txt",
+	)
+	d.fileList.list.Resize(fyne.NewSize(400, 100))
+
+	d.Select(1)
+	d.fileList.keyboardFocus = 1
+	want := d.fileList.pageNavigationTarget(1, fyne.KeyPageDown)
+	d.fileList.pageFromKeyboard(fyne.KeyPageDown, fyne.KeyModifierControl)
+
+	if got := selectedIndices(d); !equalInts(got, []int{1}) {
+		t.Fatalf("ctrl page down must keep the existing selection, got %v", got)
+	}
+	if d.fileList.keyboardFocus != want {
+		t.Fatalf("ctrl page down should move keyboard focus to %d, got %d", want, d.fileList.keyboardFocus)
+	}
+}
+
+func TestFileList_GridPageDown_MovesByVisibleRowsAndColumns(t *testing.T) {
+	d := newKeyboardNavDialog(t,
+		"00.txt", "01.txt", "02.txt", "03.txt", "04.txt", "05.txt",
+		"06.txt", "07.txt", "08.txt", "09.txt", "10.txt", "11.txt",
+	)
+	d.fileList.setView(GridView)
+	d.fileList.grid.Resize(fyne.NewSize(360, 260))
+	d.fileList.onResize()
+
+	cols := d.fileList.grid.ColumnCount()
+	if cols < 2 {
+		t.Fatalf("test setup expected multiple grid columns, got %d", cols)
+	}
+
+	d.Select(1)
+	d.fileList.keyboardFocus = 1
+	d.fileList.pageFromKeyboard(fyne.KeyPageDown, 0)
+
+	want := 1 + d.fileList.gridPageDelta()
+	if got := selectedIndices(d); !equalInts(got, []int{want}) {
+		t.Fatalf("grid page down should keep column and move one visible page row to %d, got %v", want, got)
+	}
+}
+
+func TestFileList_PageDownKeyIsHandledByFocusedList(t *testing.T) {
+	d := newKeyboardNavDialog(t,
+		"00.txt", "01.txt", "02.txt", "03.txt", "04.txt",
+		"05.txt", "06.txt", "07.txt", "08.txt", "09.txt",
+	)
+	d.fileList.list.Resize(fyne.NewSize(400, 100))
+
+	d.Select(0)
+	d.fileList.focusForKeyboardNav(d.parent.Canvas(), 0)
+	want := d.fileList.pageNavigationTarget(0, fyne.KeyPageDown)
+	d.fileList.list.TypedKey(&fyne.KeyEvent{Name: fyne.KeyPageDown})
+
+	if got := selectedIndices(d); !equalInts(got, []int{want}) {
+		t.Fatalf("focused list PageDown should select the page target, got %v", got)
+	}
+}
+
+func intRange(start, end int) []int {
+	if end < start {
+		start, end = end, start
+	}
+	out := make([]int, 0, end-start+1)
+	for i := start; i <= end; i++ {
+		out = append(out, i)
+	}
+	return out
+}

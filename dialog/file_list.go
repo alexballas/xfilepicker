@@ -1,6 +1,7 @@
 package dialog
 
 import (
+	"os"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -32,8 +33,8 @@ type fileList struct {
 	sortOrder FileSortOrder
 
 	// Cached widgets
-	grid    *widget.GridWrap
-	list    *widget.List
+	grid    *pageGridWrap
+	list    *pageList
 	overlay *selectionOverlay
 
 	// State for drag optimization and click guarding
@@ -51,6 +52,7 @@ type fileList struct {
 
 	lastGridViewportWidth float32
 	gridCols              int
+	keyboardFocus         int
 }
 
 const (
@@ -68,13 +70,24 @@ const (
 	SortSizeDesc
 	SortDateAsc
 	SortDateDesc
+
+	SortFirstModified = SortDateAsc
+	SortLastModified  = SortDateDesc
 )
+
+type fileSortKey struct {
+	name       string
+	isDir      bool
+	modTime    time.Time
+	hasModTime bool
+}
 
 func newFileList(p FilePicker) *fileList {
 	f := &fileList{
-		picker:    p,
-		sortOrder: SortNameAsc,
-		zoom:      1.0,
+		picker:        p,
+		sortOrder:     SortNameAsc,
+		zoom:          1.0,
+		keyboardFocus: 0,
 	}
 
 	f.overlay = newSelectionOverlay(nil, f.onSelectionDrag, f.onSelectionEnd)
@@ -83,7 +96,7 @@ func newFileList(p FilePicker) *fileList {
 		return f.itemSizeWithZoom(view, zoom)
 	}
 
-	f.grid = widget.NewGridWrap(
+	f.grid = newPageGridWrap(
 		func() int { return len(f.filtered) },
 		func() fyne.CanvasObject { return newFileItem(f.picker, f.getZoom, itemSize) },
 		func(id widget.GridWrapItemID, o fyne.CanvasObject) {
@@ -94,6 +107,7 @@ func newFileList(p FilePicker) *fileList {
 				item.setSelected(f.picker.IsSelected(f.filtered[item.id]))
 			}
 		},
+		f.pageFromKeyboard,
 	)
 	f.grid.StretchItems = true
 	f.grid.OnSelected = func(id widget.GridWrapItemID) {
@@ -109,7 +123,7 @@ func newFileList(p FilePicker) *fileList {
 	f.grid.OnTypedRune = f.searchFromKeyboard
 	f.grid.OnEscape = f.cancelSearchFromKeyboard
 
-	f.list = widget.NewList(
+	f.list = newPageList(
 		func() int { return len(f.filtered) },
 		func() fyne.CanvasObject { return newFileItem(f.picker, f.getZoom, itemSize) },
 		func(id widget.ListItemID, o fyne.CanvasObject) {
@@ -120,6 +134,7 @@ func newFileList(p FilePicker) *fileList {
 				item.setSelected(f.picker.IsSelected(f.filtered[item.id]))
 			}
 		},
+		f.pageFromKeyboard,
 	)
 	f.list.OnSelected = func(id widget.ListItemID) {
 		// See the GridWrap OnSelected above: keep keyboard selection unified
@@ -136,6 +151,126 @@ func newFileList(p FilePicker) *fileList {
 	return f
 }
 
+type pageList struct {
+	widget.List
+	onPageKey func(fyne.KeyName, fyne.KeyModifier)
+}
+
+func newPageList(length func() int, createItem func() fyne.CanvasObject, updateItem func(widget.ListItemID, fyne.CanvasObject), onPageKey func(fyne.KeyName, fyne.KeyModifier)) *pageList {
+	l := &pageList{onPageKey: onPageKey}
+	l.Length = length
+	l.CreateItem = createItem
+	l.UpdateItem = updateItem
+	l.ExtendBaseWidget(l)
+	return l
+}
+
+func (l *pageList) CreateRenderer() fyne.WidgetRenderer {
+	r := l.List.CreateRenderer()
+	l.ExtendBaseWidget(l)
+	return r
+}
+
+func (l *pageList) MinSize() fyne.Size {
+	size := l.List.MinSize()
+	l.ExtendBaseWidget(l)
+	return size
+}
+
+func (l *pageList) TypedKey(event *fyne.KeyEvent) {
+	if l.handlePageKey(event.Name, currentKeyboardModifiers()) {
+		return
+	}
+	l.List.TypedKey(event)
+}
+
+func (l *pageList) KeyDown(event *fyne.KeyEvent) {
+	modifiers := currentKeyboardModifiers()
+	if modifiers&fyne.KeyModifierControl == 0 {
+		return
+	}
+	l.handlePageKey(event.Name, modifiers)
+}
+
+func (l *pageList) KeyUp(*fyne.KeyEvent) {}
+
+func (l *pageList) handlePageKey(name fyne.KeyName, modifiers fyne.KeyModifier) bool {
+	if name != fyne.KeyPageUp && name != fyne.KeyPageDown {
+		return false
+	}
+	if l.onPageKey != nil {
+		l.onPageKey(name, modifiers)
+	}
+	return true
+}
+
+type pageGridWrap struct {
+	widget.GridWrap
+	onPageKey func(fyne.KeyName, fyne.KeyModifier)
+}
+
+func newPageGridWrap(length func() int, createItem func() fyne.CanvasObject, updateItem func(widget.GridWrapItemID, fyne.CanvasObject), onPageKey func(fyne.KeyName, fyne.KeyModifier)) *pageGridWrap {
+	g := &pageGridWrap{onPageKey: onPageKey}
+	g.Length = length
+	g.CreateItem = createItem
+	g.UpdateItem = updateItem
+	g.ExtendBaseWidget(g)
+	return g
+}
+
+func (g *pageGridWrap) CreateRenderer() fyne.WidgetRenderer {
+	r := g.GridWrap.CreateRenderer()
+	g.ExtendBaseWidget(g)
+	return r
+}
+
+func (g *pageGridWrap) MinSize() fyne.Size {
+	size := g.GridWrap.MinSize()
+	g.ExtendBaseWidget(g)
+	return size
+}
+
+func (g *pageGridWrap) TypedKey(event *fyne.KeyEvent) {
+	if g.handlePageKey(event.Name, currentKeyboardModifiers()) {
+		return
+	}
+	g.GridWrap.TypedKey(event)
+}
+
+func (g *pageGridWrap) KeyDown(event *fyne.KeyEvent) {
+	modifiers := currentKeyboardModifiers()
+	if modifiers&fyne.KeyModifierControl == 0 {
+		return
+	}
+	g.handlePageKey(event.Name, modifiers)
+}
+
+func (g *pageGridWrap) KeyUp(*fyne.KeyEvent) {}
+
+func (g *pageGridWrap) handlePageKey(name fyne.KeyName, modifiers fyne.KeyModifier) bool {
+	if name != fyne.KeyPageUp && name != fyne.KeyPageDown {
+		return false
+	}
+	if g.onPageKey != nil {
+		g.onPageKey(name, modifiers)
+	}
+	return true
+}
+
+func currentKeyboardModifiers() fyne.KeyModifier {
+	if app := fyne.CurrentApp(); app != nil {
+		if drv, ok := app.Driver().(desktop.Driver); ok {
+			return drv.CurrentKeyModifiers()
+		}
+	}
+	return 0
+}
+
+var (
+	_ desktop.Keyable = (*pageList)(nil)
+	_ desktop.Keyable = (*pageGridWrap)(nil)
+)
+
 // selectFromKeyboard routes a selection originating from the underlying
 // GridWrap/List keyboard handling (Space on the focused item) through the
 // picker, so keyboard and mouse share a single selection state. In
@@ -146,6 +281,7 @@ func (f *fileList) selectFromKeyboard(id int) {
 	if id < 0 || id >= len(f.filtered) {
 		return
 	}
+	f.keyboardFocus = id
 	f.picker.ToggleSelection(id)
 }
 
@@ -181,6 +317,7 @@ func (f *fileList) navigateFromKeyboard(id int, modifiers fyne.KeyModifier) {
 		return
 	}
 
+	f.keyboardFocus = id
 	switch {
 	case modifiers&fyne.KeyModifierShift != 0:
 		f.picker.ExtendSelection(id)
@@ -190,6 +327,115 @@ func (f *fileList) navigateFromKeyboard(id int, modifiers fyne.KeyModifier) {
 	default:
 		f.picker.Select(id)
 	}
+}
+
+func (f *fileList) pageFromKeyboard(name fyne.KeyName, modifiers fyne.KeyModifier) {
+	if len(f.filtered) == 0 {
+		return
+	}
+
+	current := clampIndex(f.keyboardFocus, len(f.filtered))
+	target := f.pageNavigationTarget(current, name)
+	if target == current {
+		return
+	}
+
+	f.setKeyboardHighlight(target)
+	f.navigateFromKeyboard(target, modifiers)
+}
+
+func (f *fileList) setKeyboardHighlight(id int) {
+	if id < 0 || id >= len(f.filtered) {
+		return
+	}
+
+	if f.view == GridView && f.grid != nil {
+		f.grid.SetHighlight(id)
+	} else if f.list != nil {
+		f.list.SetHighlight(id)
+	}
+	f.keyboardFocus = id
+}
+
+func (f *fileList) pageNavigationTarget(current int, name fyne.KeyName) int {
+	if len(f.filtered) == 0 {
+		return 0
+	}
+
+	delta := f.pageNavigationDelta()
+	if name == fyne.KeyPageUp {
+		delta = -delta
+	}
+	return clampIndex(current+delta, len(f.filtered))
+}
+
+func (f *fileList) pageNavigationDelta() int {
+	if f.view == GridView {
+		return f.gridPageDelta()
+	}
+	return f.listPageDelta()
+}
+
+func (f *fileList) listPageDelta() int {
+	itemSize := f.itemSizeWithZoom(ListView, f.getZoom())
+	stepY := itemSize.Height + theme.Padding()
+	if f.list != nil {
+		stepY = itemSize.Height + f.list.Theme().Size(theme.SizeNamePadding)
+	}
+
+	rows := rowsPerPage(f.activeViewportHeight(), stepY)
+	return maxInt(1, rows-1)
+}
+
+func (f *fileList) gridPageDelta() int {
+	cols := 1
+	if f.grid != nil {
+		cols = f.grid.ColumnCount()
+	}
+	if cols < 1 {
+		itemSize := f.itemSizeWithZoom(GridView, f.getZoom())
+		pad := theme.Padding()
+		if f.grid != nil {
+			pad = f.grid.Theme().Size(theme.SizeNamePadding)
+		}
+		cols = gridColumnCount(f.gridViewportWidthForLayout(), itemSize.Width, pad)
+	}
+	if cols < 1 {
+		cols = 1
+	}
+
+	itemSize := f.itemSizeWithZoom(GridView, f.getZoom())
+	stepY := itemSize.Height + theme.Padding()
+	if f.grid != nil {
+		stepY = itemSize.Height + f.grid.Theme().Size(theme.SizeNamePadding)
+	}
+
+	rows := rowsPerPage(f.activeViewportHeight(), stepY)
+	return maxInt(1, rows-1) * cols
+}
+
+func (f *fileList) activeViewportHeight() float32 {
+	if f.view == GridView && f.grid != nil && f.grid.Size().Height > 0 {
+		return f.grid.Size().Height
+	}
+	if f.view != GridView && f.list != nil && f.list.Size().Height > 0 {
+		return f.list.Size().Height
+	}
+	if f.content != nil && f.content.Size().Height > 0 {
+		return max32(0, f.content.Size().Height-theme.Padding()*2)
+	}
+	return 0
+}
+
+func rowsPerPage(viewportHeight, stepY float32) int {
+	if viewportHeight <= 0 || stepY <= 0 {
+		return 1
+	}
+	rows := int(viewportHeight / stepY)
+	if rows < 1 {
+		return 1
+	}
+	return rows
 }
 
 // clearWidgetSelection drops any selection the GridWrap/List is tracking
@@ -261,6 +507,9 @@ func (f *fileList) focusForKeyboardNav(c fyne.Canvas, id int) {
 	}
 
 	if target != nil {
+		if id >= 0 && id < len(f.filtered) {
+			f.keyboardFocus = id
+		}
 		c.Focus(target)
 	}
 }
@@ -366,6 +615,7 @@ func (f *fileList) setView(view ViewLayout) {
 
 func (f *fileList) setFiles(files []fyne.URI) {
 	f.files = files
+	f.keyboardFocus = 0
 	// New contents: ensure no widget-owned selection highlight survives from the
 	// previous folder. The picker's selection is reset separately by refreshDir.
 	f.clearWidgetSelection()
@@ -397,6 +647,7 @@ func (f *fileList) setFilter(filter string) {
 		}
 	}
 	f.sort()
+	f.keyboardFocus = clampIndex(f.keyboardFocus, len(f.filtered))
 	f.refresh()
 }
 
@@ -407,42 +658,89 @@ func (f *fileList) setSortOrder(order FileSortOrder) {
 }
 
 func (f *fileList) sort() {
-	sort.Slice(f.filtered, func(i, j int) bool {
-		iDir, _ := storage.CanList(f.filtered[i])
-		jDir, _ := storage.CanList(f.filtered[j])
-		if iDir != jDir {
-			return iDir
-		}
+	includeModTime := f.activeFilter == "" && (f.sortOrder == SortDateAsc || f.sortOrder == SortDateDesc)
+	sortKeys := make(map[string]fileSortKey, len(f.filtered))
+	for _, file := range f.filtered {
+		sortKeys[file.String()] = buildFileSortKey(file, includeModTime)
+	}
 
+	sort.Slice(f.filtered, func(i, j int) bool {
 		u1, u2 := f.filtered[i], f.filtered[j]
-		name1 := strings.ToLower(u1.Name())
-		name2 := strings.ToLower(u2.Name())
+		key1 := sortKeys[u1.String()]
+		key2 := sortKeys[u2.String()]
+		if key1.isDir != key2.isDir {
+			return key1.isDir
+		}
 
 		// Smart Sort when filtering
 		if f.activeFilter != "" {
-			prefix1 := strings.HasPrefix(name1, f.activeFilter)
-			prefix2 := strings.HasPrefix(name2, f.activeFilter)
+			prefix1 := strings.HasPrefix(key1.name, f.activeFilter)
+			prefix2 := strings.HasPrefix(key2.name, f.activeFilter)
 			if prefix1 != prefix2 {
 				// True comes first (Starts with filter)
 				return prefix1
 			}
 			// Fallback to name sort
-			return name1 < name2
+			return key1.name < key2.name
 		}
 
 		switch f.sortOrder {
 		case SortNameDesc:
-			return name1 > name2
+			return key1.name > key2.name
 		case SortSizeAsc:
 			// Just fallback to name for simplicity or implement size if needed
 			// Ideally we use size from Lister if available
-			return name1 < name2
+			return key1.name < key2.name
+		case SortDateAsc:
+			if before, ok := compareModTime(key1, key2, false); ok {
+				return before
+			}
+			return key1.name < key2.name
 		case SortDateDesc:
-			return name1 > name2
+			if before, ok := compareModTime(key1, key2, true); ok {
+				return before
+			}
+			return key1.name < key2.name
 		default:
-			return name1 < name2
+			return key1.name < key2.name
 		}
 	})
+}
+
+func buildFileSortKey(u fyne.URI, includeModTime bool) fileSortKey {
+	key := fileSortKey{name: strings.ToLower(u.Name())}
+	key.isDir, _ = storage.CanList(u)
+
+	if includeModTime {
+		key.modTime, key.hasModTime = fileModifiedTime(u)
+	}
+
+	return key
+}
+
+func compareModTime(a, b fileSortKey, newestFirst bool) (bool, bool) {
+	if a.hasModTime != b.hasModTime {
+		return a.hasModTime, true
+	}
+	if !a.hasModTime || a.modTime.Equal(b.modTime) {
+		return false, false
+	}
+	if newestFirst {
+		return a.modTime.After(b.modTime), true
+	}
+	return a.modTime.Before(b.modTime), true
+}
+
+func fileModifiedTime(u fyne.URI) (time.Time, bool) {
+	if u == nil || u.Scheme() != "file" {
+		return time.Time{}, false
+	}
+
+	info, err := os.Stat(filepath.FromSlash(u.Path()))
+	if err != nil {
+		return time.Time{}, false
+	}
+	return info.ModTime(), true
 }
 
 func (f *fileList) refresh() {
@@ -629,15 +927,9 @@ func (i *fileItem) setURI(u fyne.URI, view ViewLayout) {
 			i.loadTimer.Stop()
 		}
 
-		// Try instant memory hit
-		if img := GetThumbnailManager().LoadMemoryOnly(u.Path()); img != nil {
-			i.thumbnail.File = ""
-			i.thumbnail.Resource = nil
-			i.thumbnail.FillMode = canvas.ImageFillContain
-			i.thumbnail.Image = img.Image
-			i.thumbnail.Refresh()
-			i.icon.Hide()
-			i.thumbnail.Show()
+		// Try instant memory hit.
+		if img := GetThumbnailManager().LoadMemoryOnly(path); img != nil {
+			i.showThumbnail(img)
 			return
 		}
 
@@ -645,22 +937,40 @@ func (i *fileItem) setURI(u fyne.URI, view ViewLayout) {
 			GetThumbnailManager().Load(u, func(img *canvas.Image) {
 				// Ensure thread safety for UI updates using fyne.Do (available since v2.6.0)
 				fyne.Do(func() {
-					if i.currentPath != u.Path() {
+					if i.currentPath != path {
 						return
 					}
-					if img != nil {
-						i.thumbnail.File = ""
-						i.thumbnail.Resource = nil
-						i.thumbnail.FillMode = canvas.ImageFillContain
-						i.thumbnail.Image = img.Image
-						i.thumbnail.Refresh()
-						i.icon.Hide()
-						i.thumbnail.Show()
-					}
+					i.showThumbnail(img)
 				})
 			})
 		})
+
+		go GetThumbnailManager().LoadCached(u, func(img *canvas.Image) {
+			fyne.Do(func() {
+				if i.currentPath != path {
+					return
+				}
+				if i.loadTimer != nil {
+					i.loadTimer.Stop()
+				}
+				i.showThumbnail(img)
+			})
+		})
 	}
+}
+
+func (i *fileItem) showThumbnail(img *canvas.Image) {
+	if img == nil {
+		return
+	}
+
+	i.thumbnail.File = ""
+	i.thumbnail.Resource = nil
+	i.thumbnail.FillMode = canvas.ImageFillContain
+	i.thumbnail.Image = img.Image
+	i.thumbnail.Refresh()
+	i.icon.Hide()
+	i.thumbnail.Show()
 }
 
 func (i *fileItem) setSelected(selected bool) {
@@ -897,6 +1207,13 @@ func formatGridFolderNameWithMeasure(name string, width float32, measure func(st
 
 func minInt(a, b int) int {
 	if a < b {
+		return a
+	}
+	return b
+}
+
+func maxInt(a, b int) int {
+	if a > b {
 		return a
 	}
 	return b

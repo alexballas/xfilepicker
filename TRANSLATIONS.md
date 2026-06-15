@@ -22,7 +22,8 @@ These are specifically used by the xfilepicker extension.
 - `Name (A-Z)`: Sort order option.
 - `Name (Z-A)`: Sort order option.
 - `Size`: Sort order option.
-- `Date`: Sort order option.
+- `Last Modified`: Sort order option, newest modified files first.
+- `First Modified`: Sort order option, oldest modified files first.
 - `Home`: Sidebar location.
 - `Computer`: Sidebar root location.
 - `Desktop`: Sidebar location.

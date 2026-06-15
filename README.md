@@ -15,7 +15,7 @@ While refyne's default picker is excellent for general use, `xfilepicker` is an 
 *   **Persistent Disk Cache**: Thumbnails are cached on disk (`os.UserCacheDir()`) using SHA256 hashing of path, modification time, and partial file content. No more waiting for regeneration between app restarts.
 *   **Instant Load Architecture**: Memory hits bypass the debounce timer for a "zero-delay" feel when scrolling.
 *   **Background Pre-warming**: When you enter a folder, a background worker pre-loads thumbnails from disk into memory, making the first scroll feel polished and smooth.
-*   **LRU Eviction**: Automatically manages disk space (soft limits of 500MB or 10,000 files), cleaning up old entries on startup.
+*   **LRU Eviction**: Automatically manages disk space (soft limits of 500MB or 20,000 files), cleaning up old entries on startup.
 
 ### 3. Rich Media Support
 *   **Video Previews**: Generates high-quality thumbnails for video files (`.mp4`, `.mkv`, `.avi`, `.webm`, `.mov`) using FFmpeg.
