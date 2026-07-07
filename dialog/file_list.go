@@ -108,6 +108,7 @@ func newFileList(p FilePicker) *fileList {
 			}
 		},
 		f.pageFromKeyboard,
+		f.selectAllFromShortcut,
 	)
 	f.grid.StretchItems = true
 	f.grid.OnSelected = func(id widget.GridWrapItemID) {
@@ -135,6 +136,7 @@ func newFileList(p FilePicker) *fileList {
 			}
 		},
 		f.pageFromKeyboard,
+		f.selectAllFromShortcut,
 	)
 	f.list.OnSelected = func(id widget.ListItemID) {
 		// See the GridWrap OnSelected above: keep keyboard selection unified
@@ -153,11 +155,12 @@ func newFileList(p FilePicker) *fileList {
 
 type pageList struct {
 	widget.List
-	onPageKey func(fyne.KeyName, fyne.KeyModifier)
+	onPageKey   func(fyne.KeyName, fyne.KeyModifier)
+	onSelectAll func()
 }
 
-func newPageList(length func() int, createItem func() fyne.CanvasObject, updateItem func(widget.ListItemID, fyne.CanvasObject), onPageKey func(fyne.KeyName, fyne.KeyModifier)) *pageList {
-	l := &pageList{onPageKey: onPageKey}
+func newPageList(length func() int, createItem func() fyne.CanvasObject, updateItem func(widget.ListItemID, fyne.CanvasObject), onPageKey func(fyne.KeyName, fyne.KeyModifier), onSelectAll func()) *pageList {
+	l := &pageList{onPageKey: onPageKey, onSelectAll: onSelectAll}
 	l.Length = length
 	l.CreateItem = createItem
 	l.UpdateItem = updateItem
@@ -194,6 +197,15 @@ func (l *pageList) KeyDown(event *fyne.KeyEvent) {
 
 func (l *pageList) KeyUp(*fyne.KeyEvent) {}
 
+func (l *pageList) TypedShortcut(shortcut fyne.Shortcut) {
+	if _, ok := shortcut.(*fyne.ShortcutSelectAll); ok {
+		if l.onSelectAll != nil {
+			l.onSelectAll()
+		}
+		return
+	}
+}
+
 func (l *pageList) handlePageKey(name fyne.KeyName, modifiers fyne.KeyModifier) bool {
 	if name != fyne.KeyPageUp && name != fyne.KeyPageDown {
 		return false
@@ -206,11 +218,12 @@ func (l *pageList) handlePageKey(name fyne.KeyName, modifiers fyne.KeyModifier) 
 
 type pageGridWrap struct {
 	widget.GridWrap
-	onPageKey func(fyne.KeyName, fyne.KeyModifier)
+	onPageKey   func(fyne.KeyName, fyne.KeyModifier)
+	onSelectAll func()
 }
 
-func newPageGridWrap(length func() int, createItem func() fyne.CanvasObject, updateItem func(widget.GridWrapItemID, fyne.CanvasObject), onPageKey func(fyne.KeyName, fyne.KeyModifier)) *pageGridWrap {
-	g := &pageGridWrap{onPageKey: onPageKey}
+func newPageGridWrap(length func() int, createItem func() fyne.CanvasObject, updateItem func(widget.GridWrapItemID, fyne.CanvasObject), onPageKey func(fyne.KeyName, fyne.KeyModifier), onSelectAll func()) *pageGridWrap {
+	g := &pageGridWrap{onPageKey: onPageKey, onSelectAll: onSelectAll}
 	g.Length = length
 	g.CreateItem = createItem
 	g.UpdateItem = updateItem
@@ -247,6 +260,15 @@ func (g *pageGridWrap) KeyDown(event *fyne.KeyEvent) {
 
 func (g *pageGridWrap) KeyUp(*fyne.KeyEvent) {}
 
+func (g *pageGridWrap) TypedShortcut(shortcut fyne.Shortcut) {
+	if _, ok := shortcut.(*fyne.ShortcutSelectAll); ok {
+		if g.onSelectAll != nil {
+			g.onSelectAll()
+		}
+		return
+	}
+}
+
 func (g *pageGridWrap) handlePageKey(name fyne.KeyName, modifiers fyne.KeyModifier) bool {
 	if name != fyne.KeyPageUp && name != fyne.KeyPageDown {
 		return false
@@ -267,8 +289,10 @@ func currentKeyboardModifiers() fyne.KeyModifier {
 }
 
 var (
-	_ desktop.Keyable = (*pageList)(nil)
-	_ desktop.Keyable = (*pageGridWrap)(nil)
+	_ desktop.Keyable   = (*pageList)(nil)
+	_ desktop.Keyable   = (*pageGridWrap)(nil)
+	_ fyne.Shortcutable = (*pageList)(nil)
+	_ fyne.Shortcutable = (*pageGridWrap)(nil)
 )
 
 // selectFromKeyboard routes a selection originating from the underlying
@@ -283,6 +307,12 @@ func (f *fileList) selectFromKeyboard(id int) {
 	}
 	f.keyboardFocus = id
 	f.picker.ToggleSelection(id)
+}
+
+func (f *fileList) selectAllFromShortcut() {
+	if fd, ok := f.picker.(*fileDialog); ok {
+		fd.SelectAll()
+	}
 }
 
 // searchFromKeyboard forwards a printable character typed while the list/grid

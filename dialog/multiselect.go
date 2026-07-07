@@ -129,6 +129,7 @@ type fileDialog struct {
 
 	originalOnTypedRune func(rune)
 	originalOnTypedKey  func(*fyne.KeyEvent)
+	selectAllShortcut   *fyne.ShortcutSelectAll
 	activeMenu          *widget.PopUp
 
 	zoomInBtn  *widget.Button
@@ -157,6 +158,7 @@ func (f *fileDialog) Show() {
 	f.parent.Canvas().SetOnTypedRune(f.typedRuneHook)
 	f.originalOnTypedKey = f.parent.Canvas().OnTypedKey()
 	f.parent.Canvas().SetOnTypedKey(f.typedKeyHook)
+	f.registerShortcuts()
 	f.refreshDir(f.dir)
 }
 
@@ -165,6 +167,7 @@ func (f *fileDialog) Hide() {
 	if f.parent != nil && f.parent.Canvas() != nil {
 		f.parent.Canvas().SetOnTypedRune(f.originalOnTypedRune)
 		f.parent.Canvas().SetOnTypedKey(f.originalOnTypedKey)
+		f.unregisterShortcuts()
 	}
 
 	if f.win != nil {
@@ -345,6 +348,18 @@ func (f *fileDialog) SelectMultiple(ids []int) {
 	f.fileList.refresh()
 }
 
+func (f *fileDialog) SelectAll() {
+	if !f.allowMultiple || f.fileList == nil || len(f.fileList.filtered) == 0 {
+		return
+	}
+
+	ids := make([]int, len(f.fileList.filtered))
+	for i := range ids {
+		ids[i] = i
+	}
+	f.SelectMultiple(ids)
+}
+
 func (f *fileDialog) ToggleSelection(id int) {
 	if !f.allowMultiple {
 		f.Select(id)
@@ -433,6 +448,26 @@ func (f *fileDialog) SetFileName(fileName string) {
 	if f.saveName != nil {
 		f.saveName.SetText(fileName)
 	}
+}
+
+func (f *fileDialog) registerShortcuts() {
+	if f.parent == nil || f.parent.Canvas() == nil || f.selectAllShortcut != nil {
+		return
+	}
+
+	f.selectAllShortcut = &fyne.ShortcutSelectAll{}
+	f.parent.Canvas().AddShortcut(f.selectAllShortcut, func(fyne.Shortcut) {
+		f.SelectAll()
+	})
+}
+
+func (f *fileDialog) unregisterShortcuts() {
+	if f.parent == nil || f.parent.Canvas() == nil || f.selectAllShortcut == nil {
+		return
+	}
+
+	f.parent.Canvas().RemoveShortcut(f.selectAllShortcut)
+	f.selectAllShortcut = nil
 }
 
 func (f *fileDialog) typedRuneHook(r rune) {

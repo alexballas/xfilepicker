@@ -270,6 +270,85 @@ func TestFileList_PageDownKeyIsHandledByFocusedList(t *testing.T) {
 	}
 }
 
+func TestFileDialog_SelectAllSelectsVisibleFilteredFiles(t *testing.T) {
+	d := newKeyboardNavDialog(t, "apple.txt", "banana.txt", "pineapple.txt")
+
+	d.fileList.setFilter("apple")
+	d.SelectAll()
+
+	if got := selectedIndices(d); !equalInts(got, []int{0, 1}) {
+		t.Fatalf("select all should select the visible filtered items, got %v", got)
+	}
+	if len(d.selected) != 2 {
+		t.Fatalf("select all should not include filtered-out files, got %d selected", len(d.selected))
+	}
+	if d.anchor != 1 {
+		t.Fatalf("select all should place the selection anchor on the last visible item, got %d", d.anchor)
+	}
+}
+
+func TestFileDialog_SelectAllIgnoredWhenSingleSelect(t *testing.T) {
+	a := test.NewApp()
+	defer a.Quit()
+
+	w := a.NewWindow("Test")
+	root := t.TempDir()
+	for _, name := range []string{"a.txt", "b.txt"} {
+		if err := os.WriteFile(filepath.Join(root, name), []byte("x"), 0o644); err != nil {
+			t.Fatalf("write %s failed: %v", name, err)
+		}
+	}
+
+	d := NewFileOpen(func([]fyne.URIReadCloser, error) {}, w, false).(*fileDialog)
+	d.fileList = newFileList(d)
+	d.fileList.setView(ListView)
+
+	lister, err := storage.ListerForURI(storage.NewFileURI(root))
+	if err != nil {
+		t.Fatalf("lister failed: %v", err)
+	}
+	d.refreshDir(lister)
+	d.SelectAll()
+
+	if len(d.selected) != 0 {
+		t.Fatalf("single-select dialog should ignore select all, got %d selected", len(d.selected))
+	}
+}
+
+func TestFileDialog_SelectAllCanvasShortcutSelectsAll(t *testing.T) {
+	d := newKeyboardNavDialog(t, "a.txt", "b.txt", "c.txt")
+	d.registerShortcuts()
+	defer d.unregisterShortcuts()
+
+	c, ok := d.parent.Canvas().(interface {
+		TypedShortcut(fyne.Shortcut)
+	})
+	if !ok {
+		t.Fatalf("test canvas cannot dispatch shortcuts")
+	}
+	c.TypedShortcut(&fyne.ShortcutSelectAll{})
+
+	if got := selectedIndices(d); !equalInts(got, []int{0, 1, 2}) {
+		t.Fatalf("select all shortcut should select every visible item, got %v", got)
+	}
+}
+
+func TestFileList_SelectAllShortcutHandledWhenFocused(t *testing.T) {
+	d := newKeyboardNavDialog(t, "a.txt", "b.txt", "c.txt")
+
+	d.fileList.list.TypedShortcut(&fyne.ShortcutSelectAll{})
+	if got := selectedIndices(d); !equalInts(got, []int{0, 1, 2}) {
+		t.Fatalf("focused list select all should select every visible item, got %v", got)
+	}
+
+	d.selected = make(map[string]fyne.URI)
+	d.fileList.setView(GridView)
+	d.fileList.grid.TypedShortcut(&fyne.ShortcutSelectAll{})
+	if got := selectedIndices(d); !equalInts(got, []int{0, 1, 2}) {
+		t.Fatalf("focused grid select all should select every visible item, got %v", got)
+	}
+}
+
 func intRange(start, end int) []int {
 	if end < start {
 		start, end = end, start
