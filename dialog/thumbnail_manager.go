@@ -188,6 +188,11 @@ func (m *ThumbnailManager) worker() {
 			img, err = loadImage(path)
 		} else if isSupportedVideo(ext) {
 			img, err = m.generateVideoThumbnail(path)
+			if ext == ".mp4" && (err != nil || img == nil) {
+				img, err = loadAudioArtwork(path)
+			}
+		} else if isSupportedAudio(ext) {
+			img, err = loadAudioArtwork(path)
 		}
 
 		if err != nil || img == nil {
@@ -339,6 +344,15 @@ func isSupportedVideo(ext string) bool {
 	return ext == ".mp4" || ext == ".mkv" || ext == ".avi" || ext == ".webm" || ext == ".mov"
 }
 
+func isSupportedAudio(ext string) bool {
+	switch ext {
+	case ".mp3", ".m4a", ".mp4", ".flac", ".ogg", ".oga", ".opus", ".wav":
+		return true
+	default:
+		return false
+	}
+}
+
 func supportedThumbnailPath(uri fyne.URI) (string, bool) {
 	if uri == nil || uri.Scheme() != "file" {
 		return "", false
@@ -346,7 +360,7 @@ func supportedThumbnailPath(uri fyne.URI) (string, bool) {
 
 	path := uri.Path()
 	ext := strings.ToLower(filepath.Ext(path))
-	if !isSupportedImage(ext) && !isSupportedVideo(ext) {
+	if !isSupportedImage(ext) && !isSupportedVideo(ext) && !isSupportedAudio(ext) {
 		return "", false
 	}
 	return path, true
@@ -368,6 +382,9 @@ func (m *ThumbnailManager) generateCacheKey(path string) (string, error) {
 	h.Write([]byte(absPath))
 	h.Write([]byte(info.ModTime().String()))
 	h.Write([]byte(fmt.Sprintf("%d", info.Size())))
+	if isSupportedAudio(strings.ToLower(filepath.Ext(absPath))) {
+		addAudioSidecarCacheState(h, filepath.Dir(absPath))
+	}
 
 	// Key factor 3: Partial content (32KB)
 	f, err := os.Open(absPath)
@@ -379,6 +396,28 @@ func (m *ThumbnailManager) generateCacheKey(path string) (string, error) {
 	}
 
 	return hex.EncodeToString(h.Sum(nil)), nil
+}
+
+func addAudioSidecarCacheState(h interface{ Write([]byte) (int, error) }, directory string) {
+	entries, err := os.ReadDir(directory)
+	if err != nil {
+		return
+	}
+	for _, entry := range entries {
+		if !entry.Type().IsRegular() || !isAudioArtworkExtension(strings.ToLower(filepath.Ext(entry.Name()))) {
+			continue
+		}
+		info, err := entry.Info()
+		if err != nil {
+			continue
+		}
+		_, _ = h.Write([]byte(entry.Name()))
+		_, _ = h.Write([]byte{0})
+		_, _ = h.Write([]byte(info.ModTime().String()))
+		_, _ = h.Write([]byte{0})
+		_, _ = h.Write([]byte(fmt.Sprintf("%d", info.Size())))
+		_, _ = h.Write([]byte{0})
+	}
 }
 
 func (m *ThumbnailManager) loadDiskCache(path string) *canvas.Image {
