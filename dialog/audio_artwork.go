@@ -10,7 +10,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/cabbagekobe/tunetag"
+	"github.com/alexballas/tunetag"
 )
 
 const (

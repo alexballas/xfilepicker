@@ -4,7 +4,7 @@ go 1.25.0
 
 require (
 	github.com/alexballas/refyne/v2 v2.0.0-20260614233152-fa0b57ec8449
-	github.com/cabbagekobe/tunetag v0.1.4
+	github.com/alexballas/tunetag v0.0.0-20260718174341-d95e946c0b0e
 	github.com/rymdport/portal v0.4.2
 	golang.org/x/image v0.42.0
 )

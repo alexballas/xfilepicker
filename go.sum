@@ -4,8 +4,8 @@ github.com/BurntSushi/toml v1.6.0 h1:dRaEfpa2VI55EwlIW72hMRHdWouJeRF7TPYhI+AUQjk
 github.com/BurntSushi/toml v1.6.0/go.mod h1:ukJfTF/6rtPPRCnwkur4qwRxa8vTRFBF0uk2lLoLwho=
 github.com/alexballas/refyne/v2 v2.0.0-20260614233152-fa0b57ec8449 h1:MmFScgskJm/cTdOfGnwcUm88LUX5b2oV/TtvbpZ7o1k=
 github.com/alexballas/refyne/v2 v2.0.0-20260614233152-fa0b57ec8449/go.mod h1:GceJN/p21C/SfhAIszdrMms3DV+xscRzfQqUoGHnjac=
-github.com/cabbagekobe/tunetag v0.1.4 h1:xldlAWHU+3MrR01ZASyyLOk+2IrhzioxRfbTINLX/Io=
-github.com/cabbagekobe/tunetag v0.1.4/go.mod h1:90XcfE8GzxobbFtPbcS4Jkt+ZeZyjmjlBMDrMKFA/cs=
+github.com/alexballas/tunetag v0.0.0-20260718174341-d95e946c0b0e h1:WUiQ7apgJZ5xWiISl5dMIZUBdJ/tYPclbsdnNATHL+Q=
+github.com/alexballas/tunetag v0.0.0-20260718174341-d95e946c0b0e/go.mod h1:HURLWYLMoZtxUiboPNZ5/en9npmAWfnC23RAOwgFv8Y=
 github.com/clipperhouse/uax29/v2 v2.7.0 h1:+gs4oBZ2gPfVrKPthwbMzWZDaAFPGYK72F0NJv2v7Vk=
 github.com/clipperhouse/uax29/v2 v2.7.0/go.mod h1:EFJ2TJMRUaplDxHKj1qAEhCtQPW2tJSwu5BF98AuoVM=
 github.com/creack/pty v1.1.9/go.mod h1:oKZEueFk5CKHvIhNR5MUki03XCEU+Q6VDXinZuGJ33E=
