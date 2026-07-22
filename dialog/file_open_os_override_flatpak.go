@@ -3,6 +3,8 @@
 package dialog
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/alexballas/refyne/v2"
@@ -13,6 +15,32 @@ import (
 	"github.com/rymdport/portal"
 	"github.com/rymdport/portal/filechooser"
 )
+
+// resolveDocPortalURI works around a document-portal quirk: documents are
+// deduplicated by inode, so picking a path that is another name (e.g. a
+// symlink) for an already-exported document reuses the existing document ID,
+// while the returned URI keeps the picked basename. The FUSE mount only
+// exposes the originally registered basename, so the returned path does not
+// exist. A document directory holds exactly one entry; when the returned
+// path is missing, retry with that entry.
+func resolveDocPortalURI(uri fyne.URI) fyne.URI {
+	if uri == nil || uri.Scheme() != "file" {
+		return uri
+	}
+	path := uri.Path()
+	if _, err := os.Stat(path); err == nil || !os.IsNotExist(err) {
+		return uri
+	}
+	docDir := filepath.Dir(path)
+	if filepath.Base(filepath.Dir(docDir)) != "doc" {
+		return uri
+	}
+	entries, err := os.ReadDir(docDir)
+	if err != nil || len(entries) != 1 {
+		return uri
+	}
+	return storage.NewFileURI(filepath.Join(docDir, entries[0].Name()))
+}
 
 func fileOpenOSOverride(f *fileDialog) bool {
 	if f.isSaveMode() {
@@ -122,7 +150,7 @@ func fileOpenOSOverride(f *fileDialog) bool {
 			}
 			var dir fyne.ListableURI
 			if err == nil {
-				dir, err = storage.ListerForURI(uri)
+				dir, err = storage.ListerForURI(resolveDocPortalURI(uri))
 			}
 			fyne.Do(func() {
 				if f.folderCallback != nil {
@@ -139,7 +167,7 @@ func fileOpenOSOverride(f *fileDialog) bool {
 				err = parseErr
 				break
 			}
-			r, openErr := storage.Reader(uri)
+			r, openErr := storage.Reader(resolveDocPortalURI(uri))
 			if openErr != nil {
 				err = openErr
 				break
