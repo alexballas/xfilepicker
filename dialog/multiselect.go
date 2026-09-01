@@ -104,6 +104,7 @@ type fileDialog struct {
 
 	// UI
 	win      *widget.PopUp
+	content  fyne.CanvasObject
 	fileName *widget.Label
 	saveName *widget.Entry
 	open     *widget.Button
@@ -139,6 +140,7 @@ type fileDialog struct {
 
 	defaultSaveName  string
 	confirmOverwrite func(target fyne.URI, confirm func(bool))
+	desiredSize      fyne.Size
 }
 
 func (f *fileDialog) Show() {
@@ -146,9 +148,18 @@ func (f *fileDialog) Show() {
 		return
 	}
 
-	content := f.makeUI()
-	f.win = widget.NewModalPopUp(content, f.parent.Canvas())
-	f.win.Resize(fyne.NewSize(1000, 700))
+	if f.content == nil {
+		f.content = f.makeUI()
+	}
+	f.win = widget.NewModalPopUp(f.content, f.parent.Canvas())
+	size := f.desiredSize
+	if size.IsZero() {
+		size = f.parent.Canvas().Size()
+	}
+	if size.IsZero() {
+		size = fyne.NewSize(1000, 700)
+	}
+	f.win.Resize(size)
 
 	f.win.Show()
 
@@ -180,7 +191,10 @@ func (f *fileDialog) Dismiss() {
 }
 
 func (f *fileDialog) MinSize() fyne.Size {
-	return f.makeUI().MinSize()
+	if f.content == nil {
+		f.content = f.makeUI()
+	}
+	return f.content.MinSize()
 }
 
 func (f *fileDialog) SetOnClosed(closed func()) {
@@ -193,6 +207,7 @@ func (f *fileDialog) Refresh() {
 }
 
 func (f *fileDialog) Resize(size fyne.Size) {
+	f.desiredSize = size
 	if f.win != nil {
 		f.win.Resize(size)
 	}

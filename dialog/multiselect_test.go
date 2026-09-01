@@ -68,6 +68,44 @@ func TestResizeLayout_OnResizeWhenExternalSizeChanges(t *testing.T) {
 	}
 }
 
+func TestFileDialogUsesParentSize(t *testing.T) {
+	a := test.NewApp()
+	defer a.Quit()
+
+	w := a.NewWindow("Test")
+	w.SetContent(widget.NewLabel("parent"))
+	w.Resize(fyne.NewSize(560, 400))
+	d := NewFileOpen(func([]fyne.URIReadCloser, error) {}, w, false).(*fileDialog)
+	d.Show()
+	defer d.Hide()
+
+	padding := d.win.MinSize().Subtract(d.content.MinSize())
+	want := w.Canvas().Size().Subtract(padding)
+	if got := d.content.Size(); got != want {
+		t.Fatalf("expected parent-sized content %v, got %v", want, got)
+	}
+}
+
+func TestFileDialogResizeBeforeShow(t *testing.T) {
+	a := test.NewApp()
+	defer a.Quit()
+
+	w := a.NewWindow("Test")
+	w.SetContent(widget.NewLabel("parent"))
+	w.Resize(fyne.NewSize(800, 600))
+	d := NewFileOpen(func([]fyne.URIReadCloser, error) {}, w, false).(*fileDialog)
+	wantDialogSize := fyne.NewSize(420, 320)
+	d.Resize(wantDialogSize)
+	d.Show()
+	defer d.Hide()
+
+	padding := d.win.MinSize().Subtract(d.content.MinSize())
+	want := wantDialogSize.Subtract(padding)
+	if got := d.content.Size(); got != want {
+		t.Fatalf("expected deferred size %v, got %v", want, got)
+	}
+}
+
 func TestFolderDialog_RefreshDirOnlyShowsDirectories(t *testing.T) {
 	a := test.NewApp()
 	defer a.Quit()
