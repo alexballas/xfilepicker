@@ -3,18 +3,18 @@ module github.com/alexballas/xfilepicker
 go 1.25.0
 
 require (
-	github.com/alexballas/refyne/v2 v2.0.0-20260614233152-fa0b57ec8449
+	github.com/alexballas/portal v0.5.0
+	github.com/alexballas/refyne/v2 v2.8.107-0.20260903230837-a6e988324af5
 	github.com/alexballas/tunetag v0.0.0-20260718174341-d95e946c0b0e
-	github.com/rymdport/portal v0.4.2
 	golang.org/x/image v0.42.0
 )
 
 require (
 	fyne.io/systray v1.12.2 // indirect
 	github.com/BurntSushi/toml v1.6.0 // indirect
+	github.com/anthonynsimon/bild v0.13.0 // indirect
 	github.com/clipperhouse/uax29/v2 v2.7.0 // indirect
 	github.com/davecgh/go-spew v1.1.1 // indirect
-	github.com/fredbi/uri v1.1.1 // indirect
 	github.com/fsnotify/fsnotify v1.10.1 // indirect
 	github.com/fyne-io/gl-js v0.2.0 // indirect
 	github.com/fyne-io/glfw-js v0.3.0 // indirect

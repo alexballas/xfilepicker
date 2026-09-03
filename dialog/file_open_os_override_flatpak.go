@@ -7,13 +7,12 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/alexballas/portal"
+	"github.com/alexballas/portal/filechooser"
 	"github.com/alexballas/refyne/v2"
 	"github.com/alexballas/refyne/v2/driver"
 	"github.com/alexballas/refyne/v2/lang"
 	"github.com/alexballas/refyne/v2/storage"
-
-	"github.com/rymdport/portal"
-	"github.com/rymdport/portal/filechooser"
 )
 
 // resolveDocPortalURI works around a document-portal quirk: documents are
